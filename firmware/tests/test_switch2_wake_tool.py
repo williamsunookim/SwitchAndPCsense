@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
+from tempfile import TemporaryDirectory
 
 spec = importlib.util.spec_from_file_location('wake_tool', Path(__file__).resolve().parents[2] / 'tools/config/switch2_wake.py')
 tool = importlib.util.module_from_spec(spec)
@@ -8,6 +11,44 @@ spec.loader.exec_module(tool)
 
 
 class WakeToolTests(unittest.TestCase):
+    @staticmethod
+    def device(pages):
+        class Device:
+            def __init__(self):
+                self.pages=iter(pages)
+                self.sent=[]
+            def get_feature_report(self, *_):
+                flags,result=next(self.pages)
+                return bytes([0xf9])+b'S2\x01'+bytes([flags,result,0])+bytes(4)+bytes.fromhex('98e255aef7d898e255991f976620')
+            def send_feature_report(self, data):
+                self.sent.append(data)
+        return Device()
+
+    def test_pico_learning_saves_without_configure(self):
+        device=self.device([(32,0),(40,10),(48,5)])
+        with TemporaryDirectory() as directory, patch.object(tool.time,'sleep'), patch.object(tool.time,'monotonic',return_value=0):
+            path=Path(directory)/'wake.json'
+            tool.learn(device,SimpleNamespace(source=None,seconds=5,out=path))
+            self.assertIn('98:E2:55:99:1F:97',path.read_text())
+        self.assertEqual(len(device.sent),1)
+        self.assertEqual(len(device.sent[0]),64)
+        self.assertEqual(device.sent[0][:3],bytes([0xf6,0x34,5]))
+
+    def test_pico_timeout_preserves_backup(self):
+        device=self.device([(32,0),(40,10),(32,11)])
+        with TemporaryDirectory() as directory, patch.object(tool.time,'sleep'), patch.object(tool.time,'monotonic',return_value=0):
+            path=Path(directory)/'wake.json';path.write_text('original')
+            with self.assertRaisesRegex(RuntimeError,'timed out'):
+                tool.learn(device,SimpleNamespace(source=None,seconds=5,out=path))
+            self.assertEqual(path.read_text(),'original')
+
+    def test_pico_learning_host_timeout_cancels_scan(self):
+        device=self.device([(32,0),(40,10)])
+        with patch.object(tool.time,'monotonic',side_effect=[0,11]):
+            with self.assertRaisesRegex(RuntimeError,'expected time'):
+                tool.learn(device,SimpleNamespace(source=None,seconds=5,out=Path('unused.json')))
+        self.assertEqual(device.sent[-1][:2],bytes([0xf6,0x35]))
+
     def test_capture_known_wake(self):
         # Published on-air example, manufacturer company ID removed by Bleak.
         data = bytes.fromhex('0100037e056620000181971f9955e2980f00000000000000')

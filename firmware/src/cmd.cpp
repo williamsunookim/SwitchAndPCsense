@@ -65,7 +65,8 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // the PC USB side while the console is linked over Bluetooth.
     // Page 4: DualSense sensor-clock spacing histogram.
     if (report_id == 0xf9 && motion_page == 5 && reqlen >= 24) {
-        switch2_wake_status(buffer); return 24;
+        const uint16_t size = reqlen >= 32 ? 32 : 24;
+        switch2_wake_status(buffer, size); return size;
     }
     if (report_id == 0xf9 && motion_page == 4 && reqlen >= 25) {
         buffer[0] = 'G'; switch_bt_gap_diagnostics(buffer + 1); return 25;
@@ -140,6 +141,11 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         if (bufsize >= 2 && buffer[1] <= 1) usb_mode_set(static_cast<UsbOutputMode>(buffer[1]));
         return;
     }
+    if (report_id == 0xf6 && buffer[0] == 0x34) {
+        if (bufsize >= 8) switch2_wake_learn(buffer[1], buffer+2);
+        return;
+    }
+    if (report_id == 0xf6 && buffer[0] == 0x35) {switch2_wake_learn_cancel();return;}
     if (report_id == 0xf6 && buffer[0] == 0x21) {switch_bt_pair();return;}
     if (report_id == 0xf6 && buffer[0] == 0x22) {if(!bt_is_connected())bt_bootsel_click_action();return;}
     if (report_id == 0xf6 && buffer[0] == 0x04) {

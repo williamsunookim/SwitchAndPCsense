@@ -252,8 +252,9 @@ void switch_bt_update(const ControllerState &state) {
 }
 void switch_bt_neutral() {protocol.clear_controller();switch2_wake_neutral();}
 void switch_bt_task() {
- if(!working || !switch_bt_enabled())return;
+ if(!working)return;
  switch2_wake_task(switch_bt_connected());
+ if(!switch_bt_enabled())return;
  const uint32_t t=now();
  if(save_pending && switch_bt_connected() && static_cast<int32_t>(t-save_after)>=0) {
   void *ctx=nullptr;const btstack_tlv_t *tlv=nullptr;btstack_tlv_get_instance(&tlv,&ctx);

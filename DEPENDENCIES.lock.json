@@ -45,7 +45,7 @@
     "python": "3.9+"
   },
   "variant": {
-    "version": "integrated-0.4.4-mode-led",
+    "version": "integrated-0.4.5-pico-learn",
     "boards": [
       "pico_w",
       "pico2_w"

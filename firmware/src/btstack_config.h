@@ -12,6 +12,7 @@
 #define ENABLE_BLE
 #endif
 #define ENABLE_LE_PERIPHERAL
+#define ENABLE_LE_CENTRAL // passive wake-beacon learning; no LE connections
 #define MAX_ATT_DB_SIZE 64 // no GATT services: wake uses nonconnectable advertisements
 
 

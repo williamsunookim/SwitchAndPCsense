@@ -39,7 +39,11 @@ local dependencies excluded by `.gitignore`.
 
 ## Switch 2 wake setup
 
-`config/switch2_wake.py` captures a paired Switch 2 controller wake beacon, stores
+`config/switch2_wake.py learn` receives and stores a wake beacon directly on the
+USB-connected Pico in PC mode; PC Bluetooth and `bleak` are not required.
+It listens for 30 seconds by default and leaves existing settings intact on
+timeout, conflicting donors, cancellation or save failure. The optional legacy
+`capture` command uses PC Bluetooth and requires `bleak`. The tool also stores
 the replay settings, requests a test burst, and reads diagnostics. See
 [the setup guide](../docs/SWITCH2_WAKE.md) for the required one-time capture and
 Bluetooth identity/re-pairing implications.

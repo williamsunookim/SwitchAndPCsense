@@ -2,7 +2,7 @@
 
 # Pico DualSense Switch Bridge
 
-[한국어](./README.KR.md) | [简体中文](./README.CN.md)
+[简体中文](./README.CN.md)
 
 > Use a Raspberry Pi Pico 2 W to bridge a Bluetooth DualSense or DualSense Edge
 > controller to either a wired DualSense USB device for PC or a wired Nintendo

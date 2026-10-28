@@ -7,6 +7,8 @@ Some development notes below are in Korean and include historical experiments.
 |---|---|
 | [Validation](VALIDATION.md) | Checks performed and their limits |
 | [Known limitations](KNOWN_LIMITATIONS.md) | Hardware and protocol caveats |
+| [Switch 2 wake setup](SWITCH2_WAKE.md) | Pico learning, re-pairing and troubleshooting |
+| [Release preparation](RELEASING.md) | Build checks, release assets and release notes |
 | [Architecture](ARCHITECTURE.md) | Firmware design notes |
 | [Testing](TESTING.md) | Development test notes |
 | [Trigger feel](BOTW_FEEL.md) | Experimental bow/haptics behavior |

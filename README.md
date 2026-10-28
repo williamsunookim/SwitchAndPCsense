@@ -1,114 +1,138 @@
-﻿# SwitchAndPCsense
+# SwitchAndPCsense
 
-Experimental DualSense Bluetooth firmware for Raspberry Pi Pico W and Pico 2 W, using a shared codebase and separate board builds.
+Use a Bluetooth DualSense with a PC over USB or a Nintendo Switch over Bluetooth, using a Raspberry Pi Pico W or Pico 2 W.
 
-The current `integrated-0.4.4-mode-led` build switches between **PC USB (DualSense)** and **Switch Bluetooth** output. Double-click the Pico's BOOTSEL button to toggle; the selected mode is saved across power cycles. In Switch mode, USB supplies power and diagnostics while input goes to the console over Bluetooth. In PC mode, Switch connections and console wake are disabled and USB carries DualSense game input and output.
+**Current firmware: `integrated-0.4.5-pico-learn`**
 
-The onboard LED identifies the selected mode in a repeating two-second cycle:
-**one short blink = PC USB**, **two short blinks = Switch Bluetooth**. Pairing
-uses the existing continuous fast blink; low battery uses its existing steady
-on/off warning. Pairing-clear confirmation and battery warnings take priority
-over the mode pattern. The LED identifies the selected mode, not whether the
-console is connected. The LED-disable setting also disables the mode pattern.
+- **PC USB mode:** presents a DualSense USB controller and forwards PC input/output.
+- **Switch Bluetooth mode:** presents a Switch 1 Pro Controller over Bluetooth, with motion controls and HD Rumble converted to DualSense PCM haptics.
+- **Switch 2 sleep wake:** learns a paired Joy-Con 2 / Pro Controller 2 wake beacon directly on the Pico. **PC Bluetooth is not required.**
+- **Runtime mode switching:** double-click BOOTSEL; the selection survives power cycles.
+- **Mode LED:** one short blink for PC, two short blinks for Switch, repeating about every two seconds.
 
-Check or select the current mode from a connected PC:
+This is experimental firmware. Pico 2 W boot, firmware CRC, mode persistence, BLE reception, wake-beacon learning and controller reconnection have been checked locally. These checks do not establish game compatibility, measured latency, long-term stability or reliable console wake across systems. See [validation](docs/VALIDATION.md).
+
+## Hardware and downloads
+
+| Board | MCU / clock | Firmware asset | Build shortcut |
+|---|---|---|---|
+| Raspberry Pi Pico W | RP2040 / 125 MHz | `Pico-W.uf2` | `build-pico-w.cmd` |
+| Raspberry Pi Pico 2 W | RP2350 / 150 MHz | `Pico-2-W.uf2` | `build-pico-2-w.cmd` |
+
+You also need a DualSense and a USB data cable. The Pico connects to the controller over Bluetooth in both modes. For Switch 2 wake setup, you need a Joy-Con 2 or Pro Controller 2 already paired to your own console.
+
+Download the matching UF2 from [GitHub Releases](https://github.com/williamsunookim/SwitchAndPCsense/releases), when a release is available, or [build from source](#build-from-source-windows). Use the image for your exact board. Generated firmware is excluded from Git and distributed as release assets.
+
+Both boards share the same input, motion and Switch haptics implementation. Pico W omits Opus speaker/microphone processing. Pico 2 W includes the larger audio build; its presence is not a claim of tested PC headset support. Switch Bluetooth audio is not implemented.
+
+## Flash and pair the DualSense
+
+1. Hold **BOOTSEL** while connecting the Pico to your computer over USB.
+2. Copy the matching UF2 to **RPI-RP2** (Pico W) or **RP2350** (Pico 2 W). The board restarts automatically.
+3. Hold **PS + Create** on the DualSense until its light flashes rapidly. Create is the small button to the left of the touchpad.
+4. Press **BOOTSEL once** to start a 30-second controller search.
+
+A fresh configuration starts in **PC USB mode**. In this mode the PC sees a DualSense USB device. Press PS to reconnect a previously paired controller; use PS + Create and BOOTSEL once when re-pairing is needed.
+
+## Select PC or Switch mode
+
+| BOOTSEL action | Result |
+|---|---|
+| One click | Start DualSense discovery; disconnect the current DualSense if connected |
+| Two clicks | Toggle PC USB / Switch Bluetooth and save the selection |
+| Three clicks | Enter BOOTSEL for reflashing |
+| Hold about 1.5 seconds | Clear Bluetooth pairings; re-pair afterward |
+
+| LED pattern | Meaning |
+|---|---|
+| One short blink, long pause | PC USB mode |
+| Two short blinks, long pause | Switch Bluetooth mode |
+| Continuous fast blinking | DualSense discovery |
+| Regular on/off warning | Low controller battery |
+
+Pairing-clear confirmation, low-battery and discovery indications take priority over the mode pattern. The LED indicates the selected mode, not a successful console connection. The LED-disable setting also disables the mode pattern.
+
+To use the Switch, select Switch mode and open **Controllers ? Change Grip/Order** on the console. To explicitly start console pairing, use the command below. BOOTSEL single-click searches for the DualSense, not the console.
+
+For USB commands, install Python 3.9+ and run from the repository root:
 
 ```powershell
+python -m pip install hidapi
 python tools/config/output_mode.py status
 python tools/config/output_mode.py pc
 python tools/config/output_mode.py switch
 python tools/config/output_mode.py pair
 ```
 
-`pair` starts Switch pairing only in Switch mode. BOOTSEL single-click still pairs the DualSense; double-click now changes modes. Mode changes briefly reconnect USB and stop previous haptics/audio before routing the new output. The default mode on a fresh configuration is PC.
+`pair` requires Switch mode. A mode change briefly reconnects USB and clears previous haptics/audio state. In Switch mode, USB supplies power and diagnostics; game input is routed over Bluetooth. In PC mode, console connection attempts and console wake are disabled.
 
-## Supported boards
+## Set up Switch 2 wake once
 
-| Board | Processor | Clock | Build shortcut | Output |
-|---|---|---|---|---|
-| Raspberry Pi Pico W | RP2040 | 125 MHz | `build-pico-w.cmd` | `dist/Pico-W.uf2` |
-| Raspberry Pi Pico 2 W | RP2350 | 150 MHz | `build-pico-2-w.cmd` | `dist/Pico-2-W.uf2` |
+Keep the Pico connected to the PC by USB. **The Pico receives the beacon itself; the PC does not need Bluetooth or `bleak`.**
 
-Both targets use the same controller, motion and haptics implementation. The Pico W build omits Opus processing; the Pico 2 W build includes the larger audio/core1 build path. This does not imply tested headset, microphone or speaker support in the current wireless mode.
+```powershell
+python -m pip install hidapi
+python tools/config/output_mode.py pc
+python tools/config/switch2_wake.py learn
+```
 
-## Build on Windows
+During the **30-second learning window**:
 
-Install Git, Python 3.9 or newer with pip, and either Visual Studio C++ Build Tools or native GCC/G++.
+1. Put your Switch 2 into sleep mode.
+2. Wake it with **HOME on one already-paired Joy-Con 2 / Pro Controller 2**. Keep it near the Pico.
+3. Wait for **`saved`**. The Pico stores the settings automatically and the tool writes a backup to `dist/switch2-wake.json`. No separate `configure` command is needed.
 
-Double-click the shortcut for your board, or run from the repository root:
+Then:
+
+1. Turn the original controller off.
+2. Unplug and reconnect the Pico. Learning changes its Bluetooth identity, so **re-pair the DualSense using PS + Create and BOOTSEL once**.
+3. Select Switch mode and pair the console again:
+
+   ```powershell
+   python tools/config/output_mode.py switch
+   python tools/config/output_mode.py pair
+   ```
+
+4. Open **Controllers ? Change Grip/Order** on the console.
+
+After setup, keep the Pico powered in Switch mode. Pressing PS on the DualSense reconnects it and requests console wake when the console link is absent. This targets **sleep**, not a fully powered-off console.
+
+**Do not power on the original learned controller at the same time as the Pico:** they use the same Bluetooth address. Keep that controller registered on the console. Settings and pairings persist across power cycles, but clearing pairings, changing the learned identity or deleting the console's controller registration can require setup again.
+
+Timeout, cancellation, multiple different donors and save failure leave existing settings intact. `candidate_seen` only means a beacon was detected; `saved` confirms storage. After reconnecting power, check `active: true` and `reboot_required: false`:
+
+```powershell
+python tools/config/switch2_wake.py status
+```
+
+See the [wake setup and troubleshooting guide](docs/SWITCH2_WAKE.md) for longer learning windows, backups and disabling wake.
+
+## Troubleshooting and limitations
+
+- **DualSense will not reconnect after learning:** the Pico address changed. Hold PS + Create and press BOOTSEL once. PS alone may still target the old pairing.
+- **Switch is not connected:** check the selected mode, run `output_mode.py pair`, and open Change Grip/Order. A mode LED is not a connection indicator.
+- **Learning finds no beacon:** use PC mode, move the Pico closer, and press HOME on a controller already registered to that console. Retry with `learn --seconds 60`.
+- **Wake does not work:** check `active`, `reboot_required` and `hci_error`; keep Pico power on during sleep. Successful learning does not itself prove console wake.
+- NFC/Amiibo, Switch Bluetooth headset/microphone/speaker audio and fully-off console power-on are outside the implemented scope.
+- Game-specific PC haptics/audio, latency and sustained dual-link Bluetooth operation need further hardware testing. Pico W does not include the Pico 2 W Opus processing path.
+
+Configuration and diagnostics are documented in [tools](tools/README.md). Historical design notes are indexed under [docs](docs/README.md); some remain in Korean. Archived upstream documentation describes earlier USB behavior and is not the current feature specification.
+
+## Build from source (Windows)
+
+Install Git, Python 3.9+ with pip, and Visual Studio C++ Build Tools or a native compiler supporting C++20.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Board pico_w
-powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Board pico2_w
-```
-
-The first build downloads missing SDK/compiler dependencies. Opus and WDL are fetched at the exact commits recorded in [`DEPENDENCIES.lock.json`](DEPENDENCIES.lock.json), rather than stored in this repository. Internet access is required when dependencies are missing. Later builds reuse the local copies.
-
-```powershell
-# Build and run all host tests
 powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Board pico2_w -Test
-
-# Explicitly prepare the full build environment
-powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Bootstrap
-
-# Use a specific Python installation
-powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Board pico_w -PythonExecutable C:\Python313\python.exe
 ```
 
-Build caches are separate for each board under `firmware/build/`. Outputs are copied to `dist/`; the build does not automatically flash a connected board. The provided build entry points target Windows. Original upstream scripts for other platforms are retained as reference, not validated build instructions.
+You can also double-click the board-specific CMD shortcut. The first build downloads missing SDK/compiler dependencies. Opus and WDL are fetched at the commits in [DEPENDENCIES.lock.json](DEPENDENCIES.lock.json). Internet access is needed when dependencies are missing; later builds reuse them.
 
-## Flash and pair
-
-1. Hold **BOOTSEL** while connecting the Pico to your computer with a USB data cable.
-2. Copy the matching UF2 from `dist/` to **RPI-RP2** (Pico W) or **RP2350** (Pico 2 W). The board restarts automatically.
-3. Put the DualSense into pairing mode by holding **PS + Create**, then press the Pico's **BOOTSEL once** to start discovery.
-4. On the Switch, open **Controllers → Change Grip/Order** and complete pairing.
-
-Use the firmware for your exact board. This project remains experimental: successful compilation, host tests and USB diagnostics do not establish console pairing or gameplay compatibility.
-
-## Validation and limitations
-
-- Both board configurations have been built, and the portable host test suite has passed.
-- Earlier Pico 2 W hardware checks confirmed boot, 150 MHz operation and a matching flash CRC; later repository reorganizations were verified by build and host tests.
-- Actual console pairing, gameplay, latency and long-term dual-link Bluetooth stability still need hardware validation.
-- Experimental Switch 2 sleep wake uses a captured beacon from an already paired Joy-Con 2 / Pro Controller 2. One-time setup changes the adapter Bluetooth identity and requires re-pairing; see the [wake setup guide](docs/SWITCH2_WAKE.md). Console wake is not hardware-verified.
-- NFC/Amiibo is outside the implemented scope. PC input/output paths are restored, but game-specific haptics/audio still require hardware testing. Switch Bluetooth audio is not implemented.
-
-See the [validation record](docs/VALIDATION.md), [limitations](docs/KNOWN_LIMITATIONS.md), and [host tools guide](tools/README.md). Most historical development notes remain in Korean.
-
-## Repository layout
-
-```text
-build-pico-w.cmd           One-click Pico W build
-build-pico-2-w.cmd         One-click Pico 2 W build
-build.ps1                 Shared Windows build entry point
-DEPENDENCIES.lock.json    Pinned dependency revisions
-firmware/
-  src/                    Shared firmware implementation
-  boards/                 Board definitions
-  cmake/                  Build helpers
-  profiles/               Trigger configuration examples
-  tests/                  Host tests and SDK stubs
-  tools/                  Memory guard and protocol helper
-  licenses/               Third-party license texts
-  .deps/                  Downloaded Opus/WDL (ignored)
-  build/                  Per-board build caches (ignored)
-tools/
-  bootstrap.py            Dependency setup
-  config/                 Host configuration and bootloader tools
-  diagnostics/            CRC, Bluetooth and motion diagnostics
-  README.md               Host tools usage
-  ...                     Downloaded build tools (ignored)
-docs/
-  README.md               Documentation index
-  upstream/               Original documentation and build scripts
-dist/                     Generated UF2 files (ignored)
-```
-
-Only project source, tests, profiles, scripts, documentation and license notices belong in Git. SDKs, compilers, external libraries, logs and generated firmware are ignored. Attach `dist/Pico-W.uf2` and `dist/Pico-2-W.uf2` to a GitHub Release when publishing a build; use Git commits and tags for source history.
+Outputs are `dist/Pico-W.uf2` and `dist/Pico-2-W.uf2`, with separate caches under `firmware/build/`. Building does not flash the board automatically. See [release preparation](docs/RELEASING.md) before publishing binaries.
 
 ## Credits and licenses
 
-This repository derives from Pico-DualSense-Switch-Bridge and DS5Dongle and incorporates additional protocol and haptics work. See the [source review](docs/SOURCE_REVIEW.md), [third-party notices](firmware/THIRD_PARTY_NOTICES.md), and [upstream documentation](docs/upstream/README.md).
+Derived from Pico-DualSense-Switch-Bridge and DS5Dongle, with protocol work based on the sources credited in [source review](docs/SOURCE_REVIEW.md), [third-party notices](firmware/THIRD_PARTY_NOTICES.md) and the [wake protocol references](docs/SWITCH2_WAKE.md#protocol-references).
 
-The repository [MIT license](LICENSE) does not replace file-specific or dependency licenses. In particular, `firmware/src/audio.cpp` carries MPL-2.0 terms. Full dependency notices are preserved in [`firmware/licenses/`](firmware/licenses/).
+The repository [MIT license](LICENSE) does not replace file-specific or dependency licenses. In particular, `firmware/src/audio.cpp` carries MPL-2.0 terms. Preserve the modified source, notices and full [third-party license texts](firmware/licenses/) when distributing firmware.

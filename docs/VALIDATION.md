@@ -1,4 +1,31 @@
-# Structure validation ? 2026-10-28
+# Validation record
+
+## Subsequent local setup — 2026-10-29
+
+- A real registered controller wake beacon was learned: 33 matching beacons and
+  `result: saved` were observed without HCI errors.
+- After a power cycle, `active: true` and `reboot_required: false` confirmed that
+  the learned identity was loaded.
+- DualSense re-pairing through PS + Create and a new Pico discovery succeeded.
+  Console connection was observed earlier in the setup; the user subsequently
+  reported reconnection success. No quantitative gameplay or wake test was recorded.
+- These observations do not establish reliable console sleep wake across systems.
+
+## Pico wake-beacon learning — 2026-10-29
+
+- Version: `integrated-0.4.5-pico-learn`; both board builds passed memory checks.
+- 13 C++ host groups and 22 Python tests passed. Added bounded advertisement
+  decoding, public-address/source filtering, timeout, cancellation, conflicting
+  donor rejection, flash-failure rollback and USB learning-tool lifecycle checks.
+- Connected Pico 2 W was flashed; version, 150 MHz operation and application
+  CRC matched the new UF2 (`dist/PICO2_LEARN_FLASH_VERIFICATION.json`).
+- Hardware scan with an impossible donor filter received 125 surrounding BLE
+  reports in five seconds with HCI error 0. Cancellation and timeout both ended
+  learning and retained existing settings; no real donor was stored. Restored
+  the previously selected Switch Bluetooth mode afterward.
+- Scan record: `dist/PICO2_LEARN_SCAN_VERIFICATION.json`.
+- Capturing an actual paired Joy-Con 2 / Pro Controller 2 and waking a console
+  remain unverified. The user must run `learn` and press the donor HOME button.
 
 ## Mode LED — 2026-10-29
 

@@ -11,7 +11,7 @@ def read_mode(device):
     if len(raw) < 62 or raw[42:45] != b'WL\x01':
         raise RuntimeError('Output mode diagnostics unavailable')
     version = bytes(device.get_feature_report(0xf8, 64))[1:].split(b'\0', 1)[0].decode()
-    if not version.startswith(('integrated-0.4.3-', 'integrated-0.4.4-')):
+    if not version.startswith(('integrated-0.4.3-', 'integrated-0.4.4-', 'integrated-0.4.5-')):
         raise RuntimeError('Requires integrated-0.4.3 mode-switch firmware')
     return dict(mode='switch' if raw[45] & 8 else 'pc',
                 dualsense_connected=bool(raw[17] & 2),

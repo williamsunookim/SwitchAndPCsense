@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import struct
+import time
 
 
 def mac(value):
@@ -91,13 +92,55 @@ def status(device):
     if len(page) < 24 or page[:3] != b'S2\x01':
         raise RuntimeError('Wake diagnostics not supported')
     result = ('idle', 'queued', 'burst ended (console wake not confirmed)', 'busy/cooldown',
-              'not configured/ready', 'saved', 'flash save failed', 'BLE command failed', 'console already connected', 'PC mode: wake disabled')
+              'not configured/ready', 'saved', 'flash save failed', 'BLE command failed', 'console already connected', 'PC mode: wake disabled',
+              'learning', 'learning timed out: no wake beacon', 'multiple wake beacons: settings unchanged', 'learning canceled',
+              'reserved', 'select PC mode before learning')
     return {'active': bool(page[3] & 1), 'advertising_requested': bool(page[3] & 2),
             'reboot_required': bool(page[3] & 4),
+            'learning': bool(page[3] & 8), 'candidate_seen': bool(page[3] & 16),
+            'learning_supported': bool(page[3] & 32),
+            'scan_reports': int.from_bytes(page[24:28], 'little') if len(page) >= 32 else None,
+            'scan_matches': int.from_bytes(page[28:32], 'little') if len(page) >= 32 else None,
             'result': result[page[4]] if page[4] < len(result) else page[4],
             'hci_error': page[5], 'attempts': int.from_bytes(page[6:10], 'little'),
             'source': display(page[10:16]), 'target': display(page[16:22]),
             'product': int.from_bytes(page[22:24], 'little')}
+
+
+def learn(device, args):
+    initial = status(device)
+    if not initial['learning_supported']:
+        raise RuntimeError('Pico learning requires integrated-0.4.5 firmware or newer')
+    if initial['learning']:
+        raise RuntimeError('Learning is already active; wait or use cancel-learn')
+    source = mac(args.source) if args.source else bytes(6)
+    device.send_feature_report(bytes([0xf6, 0x34, args.seconds]) + source + bytes(55))
+    answer = status(device)
+    if not answer['learning']:
+        raise RuntimeError(f"Learning did not start: {answer['result']}")
+    print(f'Pico is listening for {args.seconds} seconds. PC Bluetooth is not used.', flush=True)
+    print('Put Switch 2 to sleep, then wake it with HOME on ONE paired Joy-Con 2 / Pro Controller 2.', flush=True)
+    seen = False
+    try:
+        deadline = time.monotonic() + args.seconds + 5
+        while answer['learning']:
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Pico learning did not finish within the expected time')
+            time.sleep(0.25)
+            answer = status(device)
+            if answer['candidate_seen'] and not seen:
+                print('Wake beacon detected. Checking for conflicting controllers until the window ends...', flush=True)
+                seen = True
+        if answer['result'] != 'saved':
+            raise RuntimeError(f"Learning failed: {answer['result']} (HCI error {answer['hci_error']}). Previous settings retained.")
+        profile = {key: answer[key] for key in ('source', 'target', 'product')}
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(profile, indent=2) + '\n', encoding='utf-8')
+        print(f'Saved on Pico; backup written to {args.out}. No configure command is needed.')
+        print('Turn the original controller OFF, then unplug/replug Pico and re-pair DualSense and Switch.')
+    finally:
+        if answer['learning']:
+            device.send_feature_report(bytes([0xf6, 0x35]) + bytes(62))
 
 
 def configure(device, profile):
@@ -124,9 +167,13 @@ def main():
     scan.add_argument('--source', help='Only capture this controller MAC')
     scan.add_argument('--seconds', type=float, default=20)
     scan.add_argument('--out', type=Path, default=Path('dist/switch2-wake.json'))
+    learning = sub.add_parser('learn', help='Learn directly on Pico via USB; no PC Bluetooth required')
+    learning.add_argument('--source', help='Only learn this controller MAC (optional)')
+    learning.add_argument('--seconds', type=int, choices=range(5, 121), default=30, metavar='5..120')
+    learning.add_argument('--out', type=Path, default=Path('dist/switch2-wake.json'))
     setup = sub.add_parser('configure')
     setup.add_argument('profile', type=Path)
-    for name in ('status', 'wake', 'disable'):
+    for name in ('status', 'wake', 'disable', 'cancel-learn'):
         sub.add_parser(name)
     args = parser.parse_args()
     if args.command == 'capture':
@@ -136,6 +183,10 @@ def main():
     try:
         if args.command == 'configure':
             configure(device, json.loads(args.profile.read_text(encoding='utf-8')))
+        elif args.command == 'learn':
+            learn(device, args)
+        elif args.command == 'cancel-learn':
+            device.send_feature_report(bytes([0xf6, 0x35]) + bytes(62))
         elif args.command == 'disable':
             device.send_feature_report(bytes([0xf6, 0x31]) + bytes(62))
             if status(device)['result'] != 'saved':

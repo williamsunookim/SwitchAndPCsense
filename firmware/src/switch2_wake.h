@@ -11,6 +11,9 @@ struct Switch2WakeSettings {
 static_assert(sizeof(Switch2WakeSettings) == 14);
 bool switch2_wake_valid(const Switch2WakeSettings &settings);
 void switch2_wake_payload(const Switch2WakeSettings &settings, uint8_t out[31]);
+bool switch2_wake_decode(const uint8_t source[6], const uint8_t *data, uint16_t size, Switch2WakeSettings &out);
+bool switch2_wake_learn(uint8_t seconds, const uint8_t source_filter[6]);
+void switch2_wake_learn_cancel();
 
 // Radio functions run on core0's polled BTstack loop only.
 void switch2_wake_init();
@@ -20,6 +23,6 @@ void switch2_wake_input(bool home);
 void switch2_wake_neutral();
 void switch2_wake_cancel();
 bool switch2_wake_request();
-void switch2_wake_status(uint8_t out[24]);
+void switch2_wake_status(uint8_t *out, uint16_t size = 24);
 void switch2_wake_hci(uint8_t *packet, uint16_t size);
 bool switch2_wake_configure(const Switch2WakeSettings &settings);
