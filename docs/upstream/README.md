@@ -1,0 +1,418 @@
+> Historical upstream documentation. For the current supported features and build workflow, see the [project README](../../README.md).
+
+# Pico DualSense Switch Bridge
+
+[한국어](./README.KR.md) | [简体中文](./README.CN.md)
+
+> Use a Raspberry Pi Pico 2 W to bridge a Bluetooth DualSense or DualSense Edge
+> controller to either a wired DualSense USB device for PC or a wired Nintendo
+> Switch Pro Controller USB device for Nintendo Switch 2.
+
+This project is a fork of [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle).
+It preserves the original PC DualSense bridge and adds a runtime-selectable,
+Switch 2-compatible Nintendo Switch Pro Controller profile. See
+[Credits and license](#credits-and-license) for the upstream and protocol sources.
+
+## Overview
+
+Version 0.8.2 fixes an audio initialization heap shortage in v0.8.1 that
+could leave the device unresponsive, with Windows USB recognition errors and
+BOOTSEL actions failing. It retains the upstream `v0.7.2-hotfix` PC audio/haptics
+baseline and Switch mode. Firmware source is unchanged from v0.8.2-rc.1.
+
+Upgrading from v0.8.1 preserves the existing settings format and pairing data.
+Upgrading from v0.8.0 resets firmware settings to schema v5 defaults; reselect
+Switch mode with BOOTSEL if needed. Known issue: speaker volume may be very low
+on the first controller connection after PC startup; disconnecting and
+reconnecting the controller restores it in the reported case. This release
+does not fix that volume issue.
+
+The controller stays paired with the Pico over Bluetooth. The Pico exposes one USB
+profile at a time and remembers the selected profile across power cycles.
+
+| USB profile | Intended host | USB identity | Key capabilities |
+|---|---|---|---|
+| DualSense | Windows / PC | DualSense or DualSense Edge | Native inputs, touchpad, motion, adaptive triggers, haptics, speaker, headset and microphone |
+| Switch Pro | Nintendo Switch 2 | Nintendo Switch Pro Controller (`057E:2009`) | Buttons except the microphone button, basic vibration; see Switch verification status below |
+
+The Switch profile uses the original Nintendo Switch Pro Controller protocol, not the
+new Switch 2 Pro Controller protocol. Switch 2 therefore requires **Nintendo Switch Pro
+Controller Wired Communication** to be enabled in console settings. Switch input uses
+the original Pro Controller's 8 ms USB interval (125 Hz). NFC/amiibo and the Switch 2
+`C` button are not supported.
+
+## Switch verification status
+
+**Verified on Switch**
+
+- Double-clicking BOOTSEL switches to Pro Controller mode.
+- Basic vibration works. HD Rumble fidelity has not been verified.
+- All buttons except the microphone button work.
+
+**Under development**
+
+- **Gyro/motion is currently unusable due to severe bugs.**
+- HD Rumble translation is experimental; its accuracy and completeness are still being evaluated.
+
+**Not yet verified on Switch**
+
+Other implemented behavior has not yet been verified on Switch, including analog stick
+movement, the microphone button, profile persistence across power cycles, and sleep/wake
+and reconnection behavior. Known unsupported features remain listed above.
+
+## Features
+
+The following describes implemented functionality. Switch hardware verification is
+limited to the items listed under **Verified on Switch** above.
+
+- 🎮 Runtime-selectable DualSense and Nintendo Switch Pro USB profiles
+- 🔁 The selected USB profile persists across reconnects and power cycles
+- 🎮 Full DualSense and DualSense Edge connectivity via Pico 2 W
+- 🌀 **Switch gyro/motion — in development:** currently unusable due to severe bugs
+- 🔊 **Switch HD Rumble — experimental, in development:** vibration may feel similar, but accuracy and completeness are still being evaluated
+- ✨ Native DualSense haptics and adaptive triggers in PC mode
+- 🎧 Headset audio output — controller speaker and 3.5 mm jack
+- 🎤 Headset microphone input — the controller mic is exposed as a USB audio input device
+- 📡 Wireless Bluetooth bridging
+- 🔘 BOOTSEL-button management — pair, change USB profile, enter BOOTSEL for flashing, or forget pairings without unplugging
+- ⚡ Runs at the stock 150 MHz clock — no overclock required
+
+## Getting Started
+
+### Get the firmware
+
+You have two options:
+
+- **Download a pre-built `.uf2`** — grab the newest
+  [Releases](../../releases) build (`pico-dualsense-switch-bridge-<version>.uf2`; other board
+  builds are bundled in `other.board.zip`; `config_tool.py` is attached there
+  too). No tools needed.
+- **Build it yourself** — see [Build Instructions](#build-instructions)
+  below (Windows users get a one-command script).
+
+### Flashing Firmware
+
+1. Hold the BOOTSEL button on the Pico2W
+2. Connect the Pico2W to your computer via USB
+3. The device will mount as a USB storage device
+4. Drag and drop the .uf2 firmware file onto the device
+
+> The firmware also supports a **reboot-to-BOOTSEL** command: the **Reboot to Bootloader** button in the
+> [web config](#configuration) reboots the dongle into BOOTSEL mode without holding the physical button.
+
+### Pairing the Controller
+
+1. Put the DualSense controller into Bluetooth pairing mode
+2. Wait for the Pico2W to detect and connect
+3. Once connected, the device will appear on the host system
+
+***You may need to replug the Pico when the controller is in pairing mode.***
+
+### USB output modes
+
+The default profile is **DualSense** for Windows. While the firmware is running,
+double-click BOOTSEL to switch to **Nintendo Switch Pro Controller** output; double-click
+again to return to DualSense. The selected profile is saved in flash and restored on
+the next boot. USB disconnects and reconnects automatically when the profile changes.
+The DualSense remains paired with the Pico, so changing USB profiles does not require
+Bluetooth pairing again.
+
+Do not hold BOOTSEL while plugging the Pico in to select a profile: the RP2350 boot ROM
+uses that gesture for UF2 flashing, so the application firmware does not run. Profile
+selection is deliberately a runtime double click.
+
+For Switch 2, open **System Settings → Controllers & Accessories** and enable
+**Nintendo Switch Pro Controller Wired Communication**. Switch to the Pro profile,
+then physically reconnect the Pico to the dock for the first test. DualSense mode is
+not natively recognized by Switch 2.
+
+**Switch gyro/motion is currently unusable due to severe bugs and remains under
+development.** The motion conversion implementation is not ready for use.
+
+**Switch HD Rumble is experimental and still in development.** The current
+implementation decodes the rumble data and synthesizes stereo PCM for the DualSense
+actuators. The vibration may feel similar, but its accuracy and completeness are
+still being evaluated; it should not be treated as a completed or faithful HD Rumble
+implementation. A 500 ms watchdog ramps the actuators to silence if the USB host
+disappears while rumble is active.
+
+### BOOTSEL button: pair, change USB mode, or clear controllers
+
+While the firmware is running, the Pico's **BOOTSEL button** doubles as a
+controller and USB-profile control — no unplugging or re-flashing needed:
+
+- **Short press (click):**
+  - If a controller is connected, the current one is disconnected (its pairing is
+    kept, so it can reconnect later). Use this to free the dongle for a different
+    already-paired controller.
+  - If nothing is connected, a 30-second scan starts to pair a new controller.
+    Put the DualSense into pairing mode (hold **PS + Create/Share** until the
+    light bar flashes) while the scan runs.
+- **Double click:** switch between **DualSense** and **Switch Pro** USB output,
+  persist the selection, and reconnect USB. (Clicks register after a brief pause,
+  to allow for a second/third click.)
+- **Triple click:** **Reboot into BOOTSEL** — the dongle re-enumerates as a USB
+  mass-storage drive so you can drag on a new `.uf2`, without holding BOOTSEL while
+  plugging in.
+- **Long press (~1.5 s):** Disconnect and **forget every paired controller** — all
+  stored pairings are deleted and blacklisted so they won't silently auto-reconnect,
+  even across a power cycle. The onboard LED flashes six times to confirm. To use a
+  forgotten controller again, put it back into **PS + Create/Share** pairing mode.
+
+> Triple click is a software path into the bootloader; you can also still enter it
+> the hardware way by holding BOOTSEL **while plugging in** the Pico (see
+> [Flashing Firmware](#flashing-firmware) above). All of these act on
+> click / double / triple / long-press **while the firmware is already running**.
+
+## Configuration
+
+You can modify the Pico settings via the upstream-compatible web config.
+
+- For release: https://ds5.awalol.eu.org
+- For development: https://ds5-dev.awalol.eu.org
+
+## Community Fork
+
+### Audio Auto Haptics fork [loteran/DS5Dongle](https://github.com/loteran/DS5Dongle)
+
+> Adds real-time haptic feedback generated from game audio.
+> The Pico listens to the sound stream and converts bass and impact sounds into DualSense rumble — no game-side haptic
+> support needed.
+
+### DS5_Bridge [SundayMoments/DS5_Bridge](https://github.com/SundayMoments/DS5_Bridge)
+
+> More customization features, such as adjusting audio, haptics, trigger strength, lighting, button remapping, and
+> shortcuts.
+
+### OLED Edition [MarcelineVPQ/DS5Dongle-OLED-Edition](https://github.com/MarcelineVPQ/DS5Dongle-OLED-Edition)
+
+> OLED Edition is a fork of awalol/DS5Dongle (upstream) that adds an optional Pico-OLED-1.3 128×64 display add-on with
+> 11 screens (status, 4-slot multi-controller pairing, lightbar color picker with favorites and effect presets, trigger
+> test, gyro tilt, touchpad, diagnostics, CPU/clock, BT signal strength, audio VU meters, and a persistent settings menu),
+> plus a DS5 button-combo soft-reboot.
+
+### [artzox/DS5Dongle](https://github.com/artzox/DS5Dongle)
+
+> Building on Awalol's and Loteran's work to expand simulated haptics and add new features like 
+> native haptics anti-aliasing, audio-leak, trigger vibrations, trigger resistance, gyro-aiming, automated profile loading.
+> [Detail Introduction](https://github.com/awalol/DS5Dongle/issues/221)
+
+### DS4Dongle [snipem/DS4Dongle](https://github.com/snipem/DS4Dongle)
+
+> Firmware for the Raspberry Pi Pico 2 W that works for DualShock 4. Inspired by DS5Dongle with headset and microphone support and configuration abilities.
+
+### [zurce/DS5Dongle-OLED](https://github.com/zurce/DS5Dongle-OLED)
+
+## Notes
+
+The Pico device will only be visible to the system after the controller is connected
+
+Some behaviors depend on reconnection cycles to take effect
+
+### Microphone
+
+The controller microphone is exposed as a USB audio input — "Headset Microphone"
+on Windows. After selecting it as your recording device, raise its input/capture
+level in your OS: Windows in particular often defaults it to 0 (or very low),
+which makes the mic seem dead even though it is working.
+
+### Low-battery LED indicator
+
+When the connected DualSense reports its battery at or below 10% (and it is not charging), the Pico onboard LED switches
+from solid-on to a 1 Hz blink so you can see the warning at a glance. The LED returns to solid-on as soon as the
+controller is plugged in or its reported level rises again. The blink also fires when `disable_pico_led` is set — the
+warning is treated as critical and overrides the LED-off preference; the LED returns to its disabled (off) state once
+the battery recovers or the controller starts charging.
+
+To opt out at build time, configure with `-DENABLE_BATT_LED=OFF`. Default is ON.
+
+### Pico W Version
+
+Pico W only has haptics support, no speaker. You can enable Pico W firmware compilation with `-DPICO_W_BUILD=ON`, or
+download precompiled firmware from GitHub Actions.
+
+### Waveshare RP2350B-Plus-W
+
+The [Waveshare RP2350B-Plus-W](https://www.waveshare.com/wiki/RP2350B-Plus-W) is an RP2350B-based board with the RM2 wireless module (same CYW43 silicon as the Pico 2 W), 16 MB QSPI flash, and a USB-C connector. Build with:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DPICO_SDK_PATH=<sdk> -DWAVESHARE_RP2350B_PLUS_W_BUILD=ON
+cmake --build build --target pico-dualsense-switch-bridge
+```
+
+Or download precompiled firmware from GitHub Actions.
+
+### USB Wake Feature
+
+Wake-on-PS is now built into the standard firmware — there is no separate `feat/usb-wake` branch or `pico-dualsense-switch-bridge-wake.uf2`
+build. It is **disabled by default**; turn it on with the **Wake PC from sleep on PS button** toggle in the
+[web config](#configuration). When enabled, the dongle presents a HID keyboard interface and advertises USB remote
+wakeup so a controller button can wake the PC; when disabled, that interface is not enumerated. See
+[Wake-on-PS](#wake-on-ps-optional) for setup.
+
+It is recommended to read #60 and #61 before using this feature.
+
+## Known Issues
+
+- ⚠️ Audio may experience slight stuttering
+
+## Performance
+
+The audio path — libopus encode/decode, the resampler, and the Bluetooth/USB
+packet handling on the hot path — executes from **RAM** instead of flash. This
+removes flash-fetch (XIP cache miss) stalls from the time-critical audio loop,
+which previously forced the RP2350 to be overclocked just to keep up with audio
+encoding.
+
+As a result, the firmware runs the **full audio path (haptics, speaker, 3.5 mm
+output, and microphone) at the stock 150 MHz clock — no overclock and no
+core-voltage bump.**
+
+> Earlier releases required 320 MHz @ 1.2 V; overclocking is no longer needed.
+> If you build for a different board and it fails to boot, reduce the CPU
+> frequency (and/or raise the voltage) in `CMakeLists.txt`.
+
+## Build Instructions
+
+### Windows 11 (one command, no WSL)
+
+You don't even need to clone this repo. Download just
+[`tools/build-windows.ps1`](tools/build-windows.ps1) to any folder and run
+it in **PowerShell**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
+```
+
+(If you already have a checkout, run `tools\build-windows.ps1` from the
+repo root instead — it detects and uses your local checkout.)
+
+The script installs every prerequisite (CMake, Ninja, Python, Git and the
+ARM GNU toolchain — via `winget`, falling back to portable downloads if
+`winget` is unavailable), clones the project (if not run from a checkout)
+plus the pinned Pico SDK + TinyUSB into
+`%USERPROFILE%\.pico-dualsense-switch-bridge-build`, builds
+the firmware, and drops `pico-dualsense-switch-bridge.uf2` next to the script and on your
+Desktop. It is safe to re-run; already-installed tools are skipped.
+
+Build a fork or a specific ref with `-Repo <url>` / `-Ref <branch|tag>`.
+
+Build a variant with `-Variant debug`.
+
+### Other platforms
+
+To build from source manually:
+
+Use CMake 3.18 or newer. Each firmware build checks the linked ELF for at least
+128 KiB of initial heap (32 KiB with speaker processing disabled). This guards
+against the Opus initialization allocation failure found in v0.8.1; it does not
+replace hardware testing. Cold Opus analysis and SILK encoder quantization code
+stays in flash to preserve RAM for the existing audio paths and buffers.
+
+1. Install Pico SDK 2.2.0 and switch its TinyUSB submodule to TinyUSB 0.20.0,
+   commit `3af1bec1a9161ee8dec29487831f7ac7ade9e189`.
+2. Initialise this repo's submodules: `git submodule update --init --recursive`
+3. Configure and build with the standard Pico SDK toolchain:
+   `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_SDK_PATH=<sdk>`
+   then `cmake --build build --target pico-dualsense-switch-bridge`
+
+On macOS, `tools/build-macos.sh` can prepare a repo-local Pico SDK checkout, prompt to install missing Homebrew build
+tools, initialize submodules, pin TinyUSB, and build the firmware:
+
+```sh
+tools/build-macos.sh
+```
+
+Use `tools/build-macos.sh --clean` to rebuild from scratch, or
+`--sdk-dir <path>` to use an existing SDK checkout. When using `--sdk-dir`, the script asks before checking that SDK out
+to the required Pico SDK and TinyUSB versions. If Homebrew's `arm-none-eabi-gcc` formula is installed without standard C
+headers, the script asks to install the complete `gcc-arm-embedded` cask and points CMake at that toolchain.
+
+## Xbox Game Bar (optional)
+
+The **PS button = Xbox Game Bar** toggle in the [web config](#configuration) maps the controller's PS button to
+keyboard shortcuts, sent over the same HID keyboard interface used by [Wake-on-PS](#wake-on-ps-optional):
+
+- **Short press** (tap and release) → `Win`+`G`, which opens the **Xbox Game Bar** overlay.
+- **Long press** (hold ≥ 750 ms) → `Win`+`Tab`, which opens **Task View**.
+
+The toggle is off by default, and the keyboard interface is only enumerated while it (or wake) is enabled. 
+> If the Game Bar overlay opens but does not respond to controller inputs, Windows may be missing the modern input stack. Installing or updating **Microsoft GameInput** will resolve this and restore controller navigation. You can install the service directly by opening an elevated command prompt and running `winget install Microsoft.GameInput`, or read the [official documentation](https://learn.microsoft.com/en-us/gaming/gdk/docs/features/common/input/overviews/input-overview) for more details.
+
+## Wake-on-PS (optional)
+
+Enabling the **Wake PC from sleep on PS button** toggle in the [web config](#configuration) makes the dongle present a
+second HID interface (a boot keyboard) and advertise USB remote wakeup. A controller button press while the host is
+suspended then injects an **F15** keypress, waking the PC from **S3 sleep**. F15 was chosen because it has no default
+Windows or app binding — a stray fire never inserts characters or triggers shortcuts. The toggle is off by default, and
+the keyboard interface is only enumerated while it (or the Xbox Game Bar shortcut) is enabled.
+
+Scope: **S3 only.** Modern Standby (S0ix) is not supported. To check your machine, run `powercfg /a` — you need
+"Standby (S3)" listed under available sleep states.
+
+After enabling the toggle (then **Reconnect USB** so the interface re-enumerates):
+
+1. Open Device Manager → the new **HID Keyboard Device** (and its parent **USB Composite Device**) → Properties → Power
+   Management → tick **"Allow this device to wake the computer."**
+2. Verify with `powercfg /devicequery wake_armed`.
+3. Sleep the PC; press any button on the controller; the PC should wake within ~1 s.
+4. After a wake, `powercfg /lastwake` should attribute the wake to the HID Keyboard Device.
+
+> Wake also needs `SelectiveSuspendEnabled = 1` (a `REG_DWORD`) on the controller's audio interface (`MI_00`). Windows
+> only writes it at first install, so a runtime toggle may need it set manually. It lives under each per-instance
+> `Device Parameters` key:
+>
+> ```
+> HKLM\SYSTEM\CurrentControlSet\Enum\USB\VID_054C&PID_0CE6&MI_00\<instance>\Device Parameters
+>     SelectiveSuspendEnabled    (REG_DWORD) = 1
+> ```
+>
+> `PID_0CE6` is the DualSense (`PID_0DF2` for the Edge), and `<instance>` is device/port-specific (e.g.
+> `6&212078ea&1&0000`), so there can be more than one node — set it on every one. An elevated PowerShell one-liner that
+> covers all present instances:
+>
+> ```powershell
+> Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\USB\VID_054C&PID_0CE6&MI_00' | ForEach-Object {
+>   New-ItemProperty "$($_.PSPath)\Device Parameters" SelectiveSuspendEnabled -Value 1 -PropertyType DWord -Force }
+> ```
+>
+> Then Reconnect USB or reboot. (Re-installing the device — clearing its Windows device cache and replugging — also
+> makes Windows write the value itself.)
+
+## Roadmap
+
+- Complete Switch 2 hardware validation and add compact USB-handshake diagnostics
+- Make Switch protocol replies resilient to endpoint backpressure and reconnects
+- Fix known Switch gyro/motion bugs and validate motion calibration on hardware
+- Continue developing and validating the accuracy of Switch HD Rumble translation
+
+## Community
+
+- For this fork, report reproducible problems in this repository's issue tracker.
+- For upstream DS5Dongle discussion, join the
+  [upstream Discord server](https://discord.gg/hM4ntchGCa).
+
+## References
+
+- [awalol/DS5Dongle](https://github.com/awalol/DS5Dongle) — upstream firmware
+- [OpenStickCommunity/GP2040-CE Switch Pro driver](https://github.com/OpenStickCommunity/GP2040-CE/pull/1365) — Switch Pro USB protocol reference
+- [Nintendo Switch accessories on Switch 2](https://support.nintendo.com/jp/switch2/accessory/controller/switch-controller/index.html) — wired communication requirement
+- [rafaelvaloto/Pico_W-Dualsense](https://github.com/rafaelvaloto/Pico_W-Dualsense) — Project inspiration
+- [egormanga/SAxense](https://apps.sdore.me/SAxense) — Bluetooth Haptics POC
+- [https://controllers.fandom.com/wiki/Sony_DualSense](https://controllers.fandom.com/wiki/Sony_DualSense) - DualSense
+  data report structure documentation
+- [Paliverse/DualSenseX](https://github.com/Paliverse/DualSenseX) — Speaker report packet
+- [Nielk1’s research report and packet samples](https://github.com/egormanga/SAxense/issues/1)
+
+## Credits and license
+
+Pico DualSense Switch Bridge is derived from
+[awalol/DS5Dongle](https://github.com/awalol/DS5Dongle). The Switch Pro USB profile
+is based on the MIT-licensed GP2040-CE Switch Pro driver and related Nintendo Switch
+protocol research. Existing copyright and SPDX notices are retained in the reused
+source files.
+
+The project is distributed under the [MIT License](../../firmware/LICENSE). It is an independent
+community project and is not affiliated with or endorsed by Sony Interactive
+Entertainment or Nintendo.

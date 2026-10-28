@@ -1,0 +1,470 @@
+#include <cstdlib>
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+
+#include "dualsense_parser.h"
+#include "switch_haptics_synth.h"
+#include "switch_pro_protocol.h"
+#include "switch_rumble.h"
+
+namespace {
+
+uint16_t unpack_x(const uint8_t *stick) {
+    return static_cast<uint16_t>(stick[0]) | ((stick[1] & 0x0f) << 8);
+}
+
+uint16_t unpack_y(const uint8_t *stick) {
+    return static_cast<uint16_t>(stick[1] >> 4) | (static_cast<uint16_t>(stick[2]) << 4);
+}
+
+int16_t read_s16(const uint8_t *data) {
+    return static_cast<int16_t>(static_cast<uint16_t>(data[0]) |
+                                (static_cast<uint16_t>(data[1]) << 8));
+}
+
+void test_dualsense_parser() {
+    uint8_t report[63]{};
+    report[0] = 0x00;
+    report[1] = 0x80;
+    report[2] = 0xff;
+    report[3] = 0x40;
+    report[4] = 0x22;
+    report[5] = 0x33;
+    report[7] = 0x08 | 0x10 | 0x40; // neutral, Square + Circle
+    report[8] = 0x01 | 0x08 | 0x10 | 0x80;
+    report[9] = 0x01 | 0x02;
+    report[15] = 0x34;
+    report[16] = 0x12;
+    report[17] = 0x78;
+    report[18] = 0x56;
+    report[19] = 0xbc;
+    report[20] = 0x9a;
+    report[21] = 0x11;
+    report[22] = 0x11;
+    report[23] = 0x22;
+    report[24] = 0x22;
+    report[25] = 0x33;
+    report[26] = 0x33;
+    report[52] = 0x15; // charging, battery step 5
+
+    ControllerState state{};
+    assert(dualsense_parse_input(report, sizeof(report), state));
+    assert(state.lx == 0x0000);
+    assert(state.ly == 0x8080);
+    assert(state.rx == 0xffff);
+    assert(state.ry == 0x4040);
+    assert(state.l2 == 0x22 && state.r2 == 0x33);
+    assert(state.dpad == CONTROLLER_DPAD_NEUTRAL);
+    assert(state.buttons & CONTROLLER_BUTTON_SQUARE);
+    assert(state.buttons & CONTROLLER_BUTTON_CIRCLE);
+    assert(state.buttons & CONTROLLER_BUTTON_L1);
+    assert(state.buttons & CONTROLLER_BUTTON_R2);
+    assert(state.buttons & CONTROLLER_BUTTON_CREATE);
+    assert(state.buttons & CONTROLLER_BUTTON_R3);
+    assert(state.buttons & CONTROLLER_BUTTON_HOME);
+    assert(state.buttons & CONTROLLER_BUTTON_PAD);
+    assert(state.gyro[0] == 0x1234);
+    assert(state.gyro[1] == 0x5678);
+    assert(state.gyro[2] == static_cast<int16_t>(0x9abc));
+    assert(state.accel[0] == 0x1111);
+    assert(state.accel[1] == 0x2222);
+    assert(state.accel[2] == 0x3333);
+    assert(state.battery == 5 && state.charging);
+    assert(!dualsense_parse_input(report, 62, state));
+}
+
+void ready_protocol(SwitchProProtocol &protocol) {
+    uint8_t out[64]{};
+    assert(protocol.next_report(0, out));
+    assert(out[0] == 0x81 && out[1] == 0x01 && out[3] == 0x03);
+
+    // Exercise control SET_REPORT normalization: report ID is separate.
+    const uint8_t handshake[] = {0x02};
+    protocol.handle_output_report(0x80, handshake, sizeof(handshake));
+    assert(protocol.next_report(1, out));
+    assert(out[0] == 0x81 && out[1] == 0x02);
+
+    const uint8_t disable_timeout[] = {0x80, 0x04};
+    protocol.handle_output_report(0, disable_timeout, sizeof(disable_timeout));
+    // 0x04 has no synthetic zero-filled input reply.
+    assert(protocol.ready());
+}
+
+void test_switch_input_mapping() {
+    SwitchProProtocol protocol;
+    ready_protocol(protocol);
+
+    ControllerState state{};
+    state.buttons = CONTROLLER_BUTTON_SQUARE | CONTROLLER_BUTTON_CROSS |
+                    CONTROLLER_BUTTON_CIRCLE | CONTROLLER_BUTTON_TRIANGLE |
+                    CONTROLLER_BUTTON_L1 | CONTROLLER_BUTTON_R1 |
+                    CONTROLLER_BUTTON_HOME | CONTROLLER_BUTTON_PAD |
+                    CONTROLLER_BUTTON_CREATE | CONTROLLER_BUTTON_OPTIONS;
+    state.dpad = CONTROLLER_DPAD_UP_RIGHT;
+    state.lx = 0x0000;
+    state.ly = 0x0000;
+    state.rx = 0xffff;
+    state.ry = 0xffff;
+    state.l2 = 32;
+    state.r2 = 32;
+    state.battery = 10;
+    protocol.update_controller(state, 10000);
+
+    uint8_t out[64]{};
+    assert(protocol.next_report(10, out));
+    assert(out[0] == 0x30);
+    assert(out[2] == 0x80);            // full battery
+    assert((out[3] & 0xcf) == 0xcf);   // Y/X/B/A/R/ZR
+    assert((out[4] & 0xb3) == 0xb3);   // Minus/Plus/Home/Capture/wired
+    assert((out[5] & 0xc6) == 0xc6);   // Up/Right/L/ZL
+    assert(unpack_x(out + 6) == 0x15c);
+    assert(unpack_y(out + 6) == 0xea4);
+    assert(unpack_x(out + 9) == 0xea4);
+    assert(unpack_y(out + 9) == 0x15c);
+}
+
+void test_trigger_hysteresis_and_neutral() {
+    SwitchProProtocol p; ready_protocol(p);
+    ControllerState s{}; uint8_t out[64]{};
+    for (auto value : {1, 16, 31, 32, 31, 17, 16, 20, 32, 0}) {
+        static const bool expected[] = {false,false,false,true,true,true,false,false,true,false};
+        static unsigned i = 0;
+        s.l2 = s.r2 = static_cast<uint8_t>(value);
+        p.update_controller(s, 10000); assert(p.next_report(10+15*i, out));
+        assert(bool(out[3] & 0x80) == expected[i]);
+        assert(bool(out[5] & 0x80) == expected[i++]);
+    }
+    s.r2 = 0; s.buttons = CONTROLLER_BUTTON_R2;
+    p.update_controller(s, 10000); assert(p.next_report(170,out)); assert(out[3] & 0x80);
+    p.clear_controller(); assert(p.ready()); assert(p.next_report(185,out));
+    assert(!(out[3] & 0x80));
+    for (unsigned i=13;i<49;++i) assert(out[i] == 0);
+}
+void test_subcommands_and_spi() {
+    SwitchProProtocol protocol;
+    ready_protocol(protocol);
+    uint8_t packet[64]{};
+    uint8_t out[64]{};
+
+    packet[0] = 0x01;
+    packet[10] = 0x02;
+    protocol.handle_output_report(0, packet, sizeof(packet));
+    assert(protocol.next_report(10, out));
+    assert(out[0] == 0x21 && out[13] == 0x82 && out[14] == 0x02);
+    assert(out[17] == 0x03); // Pro Controller type
+
+    std::memset(packet, 0, sizeof(packet));
+    packet[0] = 0x01;
+    packet[10] = 0x10;
+    packet[11] = 0x3d;
+    packet[12] = 0x60;
+    packet[15] = 9;
+    protocol.handle_output_report(0, packet, sizeof(packet));
+    assert(protocol.next_report(11, out));
+    assert(out[13] == 0x90 && out[14] == 0x10);
+    assert(out[20] == 0xa4 && out[21] == 0x46 && out[22] == 0x6a);
+
+    // The advertised IMU calibration uses neutral offsets, not offsets copied
+    // from an unrelated physical controller.
+    std::memset(packet, 0, sizeof(packet));
+    packet[0] = 0x01;
+    packet[10] = 0x10;
+    packet[11] = 0x20;
+    packet[12] = 0x60;
+    packet[15] = 24;
+    protocol.handle_output_report(0, packet, sizeof(packet));
+    assert(protocol.next_report(12, out));
+    for (size_t i = 0; i < 6; ++i) assert(out[20 + i] == 0);
+    for (size_t i = 12; i < 18; ++i) assert(out[20 + i] == 0);
+}
+
+void test_switch_imu_conversion() {
+    SwitchProProtocol protocol;
+    ready_protocol(protocol);
+    uint8_t packet[64]{};
+    uint8_t out[64]{};
+
+    packet[0] = 0x01;
+    packet[10] = 0x40; // enable IMU
+    packet[11] = 0x01;
+    protocol.handle_output_report(0, packet, sizeof(packet));
+    assert(protocol.next_report(3, out)); // subcommand ACK
+
+    ControllerState first{};
+    first.accel[0] = 200;
+    first.gyro[0] = 160;
+    protocol.update_controller(first, 0);
+
+    ControllerState second{};
+    second.accel[0] = 400;
+    second.gyro[0] = 320;
+    protocol.update_controller(second, 5000);
+
+    ControllerState newest{};
+    newest.accel[0] = 600;
+    newest.accel[1] = -400;
+    newest.accel[2] = 1000;
+    newest.gyro[0] = 480;
+    newest.gyro[1] = -320;
+    newest.gyro[2] = 160;
+    protocol.update_controller(newest, 10000);
+
+    // No playout delay: samples are taken at now, now-5ms and now-10ms.
+    assert(protocol.next_report(10, out));
+    assert(out[0] == 0x30);
+
+    // Sample 0 is newest. Switch axes are the inverse of SDL's conversion to
+    // PlayStation coordinates, and the units are down-scaled to Switch ranges.
+    assert(read_s16(out + 13) == -500); // accel X = -DS Z / 2
+    assert(read_s16(out + 15) == -300); // accel Y = -DS X / 2
+    assert(read_s16(out + 17) == -200); // accel Z =  DS Y / 2
+    // Accel samples retain recent reports, newest to oldest.
+    assert(read_s16(out + 27) == -200);
+    assert(read_s16(out + 39) == -100);
+
+    // Gyro is angle-conserving: the three 5 ms slots together carry exactly the
+    // rotation received (320*5ms + 480*5ms = 800 counts*5ms on DS X),
+    // axis-mapped and scaled.
+    auto sum=[&](unsigned offset){int t=0;for(unsigned i=0;i<3;++i)t+=read_s16(out+offset+i*12);return t;};
+    assert(std::abs(sum(19) - (-143)) <= 2); // gyro X = -DS Z * 14.284/16
+    assert(std::abs(sum(21) - (-714)) <= 2); // gyro Y = -DS X * 14.284/16
+    assert(std::abs(sum(23) - (-286)) <= 2); // gyro Z =  DS Y * 14.284/16
+    for (unsigned i=0;i<3;++i) assert(std::abs(read_s16(out+21+i*12) + 238) <= 1); // spread evenly
+}
+
+void test_uniform_motion_packet() {
+    SwitchProProtocol p; ready_protocol(p);
+    uint8_t command[64]{}; command[0]=1; command[10]=0x40; command[11]=1;
+    p.handle_output_report(0,command,sizeof(command));
+    uint8_t out[64]{}; assert(p.next_report(3,out));
+    ControllerState state{};
+    p.update_controller(state,0);
+    state.gyro[0]=800; state.accel[0]=800; p.update_controller(state,8000);
+    state.gyro[0]=1600; state.accel[0]=1600; state.r2=255;
+    p.update_controller(state,16000);
+    assert(p.next_report(16,out));
+    assert(out[3] & 0x80); // newest digital input is not delayed
+    auto near=[](int16_t v,int e){return std::abs(v-e)<=1;};
+    assert(near(read_s16(out+15),-800) && near(read_s16(out+27),-550) && near(read_s16(out+39),-300)); // accel t=16/11/6ms
+    // Rotation received: 800*8ms + 1600*8ms = 3840 counts*5ms on DS X.
+    assert(std::abs(read_s16(out+21)+read_s16(out+33)+read_s16(out+45) + 3428) <= 2);
+    assert(p.next_report(100,out));
+    for (unsigned i=0;i<3;++i) { // radio gap: hold accel (no free-fall); nothing owed, so no phantom rotation
+        assert(read_s16(out+15+i*12)==-800);
+        assert(read_s16(out+19+i*12)==0 && read_s16(out+21+i*12)==0 && read_s16(out+23+i*12)==0);
+    }
+}
+
+void test_gyro_angle_conservation() {
+    // Irregular arrivals and gaps: total rotation sent equals rotation received,
+    // and nothing keeps turning once the controller stops.
+    SwitchProProtocol p; ready_protocol(p);
+    uint8_t command[64]{}; command[0]=1; command[10]=0x40; command[11]=1;
+    p.handle_output_report(0,command,sizeof(command));
+    uint8_t out[64]{}; assert(p.next_report(3,out));
+    ControllerState s{}; s.accel[1]=8192;
+    p.update_controller(s,0);
+    const uint32_t arrivals[]={4000,7000,15000,16000,70000,74000,80000};
+    int64_t received=0; uint32_t last=0; int sent=0; uint32_t now=0;
+    for (uint32_t t : arrivals) {
+        s.gyro[0]=t<75000?1000:0; p.update_controller(s,t); received+=int64_t(s.gyro[0])*(t-last); last=t;
+        while (now*1000+15000<=t) { now+=15; if (p.next_report(now,out)) for(unsigned i=0;i<3;++i) sent+=read_s16(out+21+i*12); }
+    }
+    for (unsigned k=0;k<4;++k) { now+=15; assert(p.next_report(now,out)); for(unsigned i=0;i<3;++i) sent+=read_s16(out+21+i*12); }
+    const int expected=-int(received/5000*14284/16000);
+    assert(std::abs(sent-expected)<=6);
+    for (unsigned i=0;i<3;++i) assert(read_s16(out+21+i*12)==0); // stopped controller -> no motion
+    // IMU off: rotation is not owed later.
+    command[11]=0; p.handle_output_report(0,command,sizeof(command)); p.next_report(now+=15,out);
+    s.gyro[0]=5000; p.update_controller(s,last+=20000); p.update_controller(s,last+=20000);
+    s.gyro[0]=0; p.update_controller(s,last+=5000); // came to rest while IMU was off
+    command[11]=1; p.handle_output_report(0,command,sizeof(command)); p.next_report(now+=15,out);
+    s.gyro[0]=0; p.update_controller(s,last+=5000);
+    assert(p.next_report(now+=15,out));
+    for (unsigned i=0;i<3;++i) assert(read_s16(out+21+i*12)==0);
+}
+
+void test_gyro_sensor_clock_burst() {
+    // Four reports 4 ms apart on the sensor clock arrive in one radio burst:
+    // their rotation must still count (it was lost with arrival-time spacing).
+    SwitchProProtocol p; ready_protocol(p);
+    uint8_t command[64]{}; command[0]=1; command[10]=0x40; command[11]=1;
+    p.handle_output_report(0,command,sizeof(command));
+    uint8_t out[64]{}; assert(p.next_report(3,out));
+    ControllerState s{}; s.accel[1]=8192; s.gyro[0]=1600; s.sensor_time=0xfffff000u; // clock wraps mid-burst
+    p.update_controller(s,1000);
+    for (unsigned k=1;k<=4;++k) { s.sensor_time+=12000; p.update_controller(s,20000+k); } // 4 ms each, same arrival
+    int sent=0; for (uint32_t now=21;now<=81;now+=15) if (p.next_report(now,out)) for(unsigned i=0;i<3;++i) sent+=read_s16(out+21+i*12);
+    // 1600 counts * 16 ms = 5120 counts*5ms on DS X.
+    assert(std::abs(sent + 5120*14284/16000) <= 4);
+}
+
+void test_switch_rumble_conversion() {
+    const uint8_t maximum_left[8] = {
+        0x00, 0xc8, 0x40, 0x72,
+        0x00, 0x01, 0x40, 0x40,
+    };
+    const SwitchRumbleState maximum = switch_decode_hd_rumble(maximum_left);
+    assert(maximum.left.low.amplitude >= 250);
+    assert(maximum.left.high.amplitude >= 250);
+    assert(maximum.left.low.frequency_hz >= 159 && maximum.left.low.frequency_hz <= 161);
+    assert(maximum.left.high.frequency_hz >= 79 && maximum.left.high.frequency_hz <= 81);
+    assert(maximum.right.low.amplitude == 0);
+    assert(maximum.right.high.amplitude == 0);
+    // Canonical neutral actuator frequencies are retained even at zero
+    // amplitude, so enabling vibration does not create a discontinuity.
+    assert(maximum.right.low.frequency_hz >= 159 && maximum.right.low.frequency_hz <= 161);
+    assert(maximum.right.high.frequency_hz >= 319 && maximum.right.high.frequency_hz <= 321);
+
+    const uint8_t split_bands[8] = {
+        0x00, 0x64, 0x40, 0x4a, // high code 50, low code 20
+        0x00, 0x3c, 0x40, 0x63, // high code 30, low code 70
+    };
+    const SwitchRumbleState split = switch_decode_hd_rumble(split_bands);
+    assert(split.right.low.amplitude > split.left.high.amplitude);
+    assert(split.left.low.amplitude > 0);
+    assert(split.left.high.amplitude > 0);
+
+    const uint8_t frequency_limits[8] = {
+        0xfc, 0x01, 0x7f, 0x40,
+        0x00, 0x01, 0x40, 0x40,
+    };
+    const SwitchRumbleState limits = switch_decode_hd_rumble(frequency_limits);
+    assert(limits.left.high.frequency_hz >= 1240 && limits.left.high.frequency_hz <= 1265);
+    assert(limits.left.low.frequency_hz >= 620 && limits.left.low.frequency_hz <= 635);
+
+    SwitchProProtocol protocol;
+    ready_protocol(protocol);
+    uint8_t packet[64]{};
+    uint8_t out[64]{};
+    SwitchRumbleState pending{};
+
+    packet[0] = 0x01;
+    packet[10] = 0x48; // enable vibration
+    packet[11] = 0x01;
+    protocol.handle_output_report(0, packet, sizeof(packet));
+    assert(protocol.next_report(3, out));
+    assert(protocol.take_rumble(pending));
+    assert(pending.silent());
+
+    std::memset(packet, 0, sizeof(packet));
+    packet[0] = 0x10;
+    std::memcpy(packet + 2, maximum_left, sizeof(maximum_left));
+    protocol.handle_output_report(0, packet, sizeof(packet));
+    assert(protocol.take_rumble(pending));
+    assert(pending == maximum);
+}
+
+size_t count_positive_crossings(const int8_t *samples, size_t frames, size_t channel) {
+    size_t crossings = 0;
+    int8_t previous = samples[channel];
+    for (size_t frame = 1; frame < frames; ++frame) {
+        const int8_t current = samples[frame * 2 + channel];
+        if (previous <= 0 && current > 0) ++crossings;
+        previous = current;
+    }
+    return crossings;
+}
+
+void test_haptics_boundaries() {
+    SwitchHapticsSynth a, b;
+    SwitchRumbleState s{};
+    s.left.low = {160, 255}; s.left.high = {320, 255};
+    a.set_state(s); b.set_state(s);
+    int8_t whole[2048]{}, split[2048]{};
+    a.render(whole, 1024, 512);
+    for (unsigned i=0;i<1024;i+=32) b.render(split+i*2, 32, 512);
+    assert(std::memcmp(whole,split,sizeof(whole)) == 0);
+    unsigned nonzero=0;
+    for (unsigned i=0;i<1024;++i) {
+        assert(whole[i*2] >= -127); assert(whole[i*2+1] == 0);
+        nonzero += whole[i*2] != 0;
+    }
+    assert(nonzero > 900);
+    s.left.low = {65535,255}; a.set_state(s); a.render(whole,1024,65535);
+    a.set_state({}); a.render(whole,1024); assert(a.silent());
+    for (unsigned i=32;i<2048;++i) assert(whole[i] == 0);
+    // Every byte pattern is valid input to the bounded decoder; exercise truncation
+    // handling separately through the protocol at all packet lengths.
+    SwitchProProtocol p;
+    uint8_t bytes[64]{}; bytes[0]=0x01;
+    for (unsigned len=0;len<=64;++len) { p.handle_output_report(0,bytes,len); p.reset(); }
+}
+void test_switch_haptics_synth() {
+    SwitchRumbleState state{};
+    state.left.low = {.frequency_hz = 160, .amplitude = 220};
+    state.right.high = {.frequency_hz = 320, .amplitude = 220};
+
+    SwitchHapticsSynth synth;
+    synth.set_state(state);
+    int8_t samples[SWITCH_HAPTICS_SAMPLE_RATE * 2]{};
+    synth.render(samples, SWITCH_HAPTICS_SAMPLE_RATE);
+    assert(!synth.silent());
+
+    const size_t left_crossings =
+        count_positive_crossings(samples, SWITCH_HAPTICS_SAMPLE_RATE, 0);
+    const size_t right_crossings =
+        count_positive_crossings(samples, SWITCH_HAPTICS_SAMPLE_RATE, 1);
+    assert(left_crossings >= 158 && left_crossings <= 162);
+    assert(right_crossings >= 318 && right_crossings <= 322);
+
+    bool left_nonzero = false;
+    bool right_nonzero = false;
+    for (size_t frame = 0; frame < SWITCH_HAPTICS_SAMPLE_RATE; ++frame) {
+        left_nonzero |= samples[frame * 2] != 0;
+        right_nonzero |= samples[frame * 2 + 1] != 0;
+    }
+    assert(left_nonzero && right_nonzero);
+
+    // A stop command ramps down within 16 samples, then remains exactly zero.
+    synth.set_state({});
+    int8_t stopped[SWITCH_HAPTICS_PACKET_FRAMES * 2]{};
+    synth.render(stopped, SWITCH_HAPTICS_PACKET_FRAMES);
+    assert(synth.silent());
+    for (size_t frame = 16; frame < SWITCH_HAPTICS_PACKET_FRAMES; ++frame) {
+        assert(stopped[frame * 2] == 0);
+        assert(stopped[frame * 2 + 1] == 0);
+    }
+}
+
+} // namespace
+
+void test_report_cadence_and_restart() {
+    SwitchProProtocol p;ready_protocol(p);uint8_t out[64]{};ControllerState state{};
+    assert(p.next_report(10,out));
+    for(uint32_t t=11;t<25;++t) {state.gyro[0]=int16_t(t);p.update_controller(state,t*1000);assert(!p.next_report(t,out));}
+    assert(p.next_report(25,out));assert(out[0]==0x30);
+    p.reset();assert(!p.ready());assert(p.next_report(26,out));assert(out[0]==0x81);
+    uint8_t command[12]{1};command[10]=3;command[11]=0x30;p.handle_output_report(0,command,sizeof(command));
+    assert(p.ready());assert(p.next_report(27,out));assert(out[0]==0x21);
+    assert(p.next_report(28,out));assert(out[0]==0x30);
+}
+void test_bluetooth_transport() {
+    SwitchProProtocol p;p.set_bluetooth_transport(true);uint8_t out[64]{};
+    assert(p.ready());assert(p.next_report(0,out));assert(out[0]==0x30 && !(out[4]&0x80));
+    ControllerState s{};s.buttons=CONTROLLER_BUTTON_CROSS;p.update_controller(s,1000);
+    assert(!p.next_report(1,out));assert(p.next_report(15,out));assert(out[3]&4);
+    p.reset();assert(p.ready());assert(p.next_report(16,out));assert(out[0]==0x30);
+    uint8_t cmd[12]{1};cmd[10]=1;cmd[11]=1;p.handle_output_report(0,cmd,12);
+    assert(p.next_report(17,out));assert(out[0]==0x21 && out[13]==0x81 && out[15]==3);
+    p.set_bluetooth_transport(false);assert(!p.ready());assert(p.next_report(18,out));assert(out[0]==0x81);
+}
+int main() {
+    test_bluetooth_transport();
+    test_report_cadence_and_restart();
+    test_dualsense_parser();
+    test_switch_input_mapping();
+    test_trigger_hysteresis_and_neutral();
+    test_subcommands_and_spi();
+    test_switch_imu_conversion();
+    test_uniform_motion_packet();
+    test_gyro_angle_conservation();
+    test_gyro_sensor_clock_burst();
+    test_switch_rumble_conversion();
+    test_switch_haptics_synth();
+    test_haptics_boundaries();
+    std::cout << "switch_pro host tests passed\n";
+    return 0;
+}

@@ -1,0 +1,29 @@
+{
+  "profile": 2,
+  "force": 0,
+  "left": {
+    "mode": "resistance",
+    "start": 2,
+    "end": 7,
+    "curve": [
+      0,
+      0,
+      2,
+      2,
+      3,
+      3,
+      4,
+      4,
+      0,
+      0
+    ]
+  },
+  "right": {
+    "mode": "rumble",
+    "start": 2,
+    "end": 8,
+    "kick_ms": 80,
+    "rumble_strength": 4,
+    "frequency": 35
+  }
+}

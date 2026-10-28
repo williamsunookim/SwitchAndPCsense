@@ -1,0 +1,67 @@
+# CMake / Ninja build directories and caches
+**/build/
+**/cmake-build-*/
+**/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+build.ninja
+.ninja_deps
+.ninja_log
+CTestTestfile.cmake
+Testing/
+
+# Firmware outputs (publish separately as GitHub Release assets)
+*.uf2
+*.elf
+*.elf.map
+*.bin
+*.hex
+*.dis
+*.o
+*.obj
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# Downloaded SDKs, compilers and local Python runtime
+# Keep tools/*.py and other project-owned build scripts tracked.
+/tools/arm/
+/tools/pico-sdk/
+/tools/python/
+/tools/runtime/
+/tools/downloads/
+**/tools/flash-python/
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated logs and temporary files
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+
+# Personal editor / OS state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+/tools/picotool/
+/.cleanup-stage/
+/.cleanup-stage-manifest.json
+/dist/
+**/.deps/
+**/.cache/
