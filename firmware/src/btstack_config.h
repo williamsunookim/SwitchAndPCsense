@@ -8,6 +8,12 @@
 #define ENABLE_CLASSIC
 #endif
 
+#ifndef ENABLE_BLE
+#define ENABLE_BLE
+#endif
+#define ENABLE_LE_PERIPHERAL
+#define MAX_ATT_DB_SIZE 64 // no GATT services: wake uses nonconnectable advertisements
+
 
 // CYW43 HCI Transport requires pre-buffer space for packet header
 

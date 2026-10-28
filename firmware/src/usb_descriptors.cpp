@@ -949,7 +949,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         string_desc_arr[2] = "Pro Controller";
     } else if (ds_mode()) {
         string_desc_arr[1] = "Sony Interactive Entertainment";
-        string_desc_arr[2] = "DualSense Wireless Controller";
+        string_desc_arr[2] = usb_mode_is_wireless() ? "Pico Switch Bluetooth" : "DualSense Wireless Controller";
     }else {
         string_desc_arr[1] = "Sony Interactive Entertainment";
         string_desc_arr[2] = "DualSense Edge Wireless Controller";

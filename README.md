@@ -2,7 +2,25 @@
 
 Experimental DualSense Bluetooth firmware for Raspberry Pi Pico W and Pico 2 W, using a shared codebase and separate board builds.
 
-The current `integrated-0.4.1-gyro-fix` build forwards DualSense input to a Nintendo Switch over Bluetooth. USB supplies power and exposes host diagnostics. Despite the project name, this revision is a wireless Switch experiment; the original PC USB bridge is documented only as upstream history.
+The current `integrated-0.4.4-mode-led` build switches between **PC USB (DualSense)** and **Switch Bluetooth** output. Double-click the Pico's BOOTSEL button to toggle; the selected mode is saved across power cycles. In Switch mode, USB supplies power and diagnostics while input goes to the console over Bluetooth. In PC mode, Switch connections and console wake are disabled and USB carries DualSense game input and output.
+
+The onboard LED identifies the selected mode in a repeating two-second cycle:
+**one short blink = PC USB**, **two short blinks = Switch Bluetooth**. Pairing
+uses the existing continuous fast blink; low battery uses its existing steady
+on/off warning. Pairing-clear confirmation and battery warnings take priority
+over the mode pattern. The LED identifies the selected mode, not whether the
+console is connected. The LED-disable setting also disables the mode pattern.
+
+Check or select the current mode from a connected PC:
+
+```powershell
+python tools/config/output_mode.py status
+python tools/config/output_mode.py pc
+python tools/config/output_mode.py switch
+python tools/config/output_mode.py pair
+```
+
+`pair` starts Switch pairing only in Switch mode. BOOTSEL single-click still pairs the DualSense; double-click now changes modes. Mode changes briefly reconnect USB and stop previous haptics/audio before routing the new output. The default mode on a fresh configuration is PC.
 
 ## Supported boards
 
@@ -53,7 +71,8 @@ Use the firmware for your exact board. This project remains experimental: succes
 - Both board configurations have been built, and the portable host test suite has passed.
 - Earlier Pico 2 W hardware checks confirmed boot, 150 MHz operation and a matching flash CRC; later repository reorganizations were verified by build and host tests.
 - Actual console pairing, gameplay, latency and long-term dual-link Bluetooth stability still need hardware validation.
-- NFC/Amiibo and console wake are outside the implemented scope. Do not assume PC game input or wireless audio support from the upstream project description.
+- Experimental Switch 2 sleep wake uses a captured beacon from an already paired Joy-Con 2 / Pro Controller 2. One-time setup changes the adapter Bluetooth identity and requires re-pairing; see the [wake setup guide](docs/SWITCH2_WAKE.md). Console wake is not hardware-verified.
+- NFC/Amiibo is outside the implemented scope. PC input/output paths are restored, but game-specific haptics/audio still require hardware testing. Switch Bluetooth audio is not implemented.
 
 See the [validation record](docs/VALIDATION.md), [limitations](docs/KNOWN_LIMITATIONS.md), and [host tools guide](tools/README.md). Most historical development notes remain in Korean.
 

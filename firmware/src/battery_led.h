@@ -11,6 +11,7 @@ void battery_led_init(void);
 // Call once per main-loop iteration. Drives the LED blink while the
 // battery is low and the controller is connected; otherwise no-op.
 void battery_led_tick(void);
+bool battery_led_active(void);
 
 // Call from the BT input-report callback whenever a fresh 0x31 report
 // has been copied into interrupt_in_data. Used to detect disconnection

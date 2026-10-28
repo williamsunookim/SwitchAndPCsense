@@ -6,6 +6,7 @@
 #define DS5_BRIDGE_CONFIG_H
 
 #include <cstdint>
+#include "switch2_wake.h"
 
 struct __attribute__((packed)) Config_body {
     uint8_t config_version; // Config Version
@@ -36,6 +37,8 @@ struct __attribute__((packed)) Config {
 void config_default();
 void config_load();
 bool config_save();
+const Switch2WakeSettings &config_get_switch2_wake();
+void config_set_switch2_wake(const Switch2WakeSettings &settings);
 Config_body& get_config();
 uint8_t config_get_usb_output_mode();
 void config_set_usb_output_mode(uint8_t mode);

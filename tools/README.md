@@ -9,11 +9,18 @@ and library dependencies and is called by `build.ps1` automatically.
 python -m pip install hidapi
 python tools/config/trigger_config.py --help
 python tools/config/config_tool.py --help
+python tools/config/output_mode.py status
+python tools/config/output_mode.py pc
+python tools/config/output_mode.py switch
 ```
 
 `config/reboot_bootsel.py` requests a reboot into the USB bootloader; it changes
 the connected board state. Use the matching firmware before sending commands.
 Configuration examples are in [`firmware/profiles/`](../firmware/profiles/).
+
+BOOTSEL double-click also toggles PC USB / Switch Bluetooth and saves the mode.
+`output_mode.py pair` starts console pairing in Switch mode. In PC mode, Switch
+wireless output and Switch 2 wake are disabled.
 
 ## Diagnostics
 
@@ -29,3 +36,10 @@ readers and `capture_motion.py` provide additional development diagnostics.
 
 Downloaded SDKs, compilers, Python packages and tool caches in this directory are
 local dependencies excluded by `.gitignore`.
+
+## Switch 2 wake setup
+
+`config/switch2_wake.py` captures a paired Switch 2 controller wake beacon, stores
+the replay settings, requests a test burst, and reads diagnostics. See
+[the setup guide](../docs/SWITCH2_WAKE.md) for the required one-time capture and
+Bluetooth identity/re-pairing implications.

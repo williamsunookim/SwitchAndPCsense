@@ -38,6 +38,12 @@ static_assert(EFFECTS_OFFSET + sizeof(EffectsRecord) <= FLASH_PAGE_SIZE);
 static_assert(sizeof(Config) + sizeof(UsbModeRecord) <= EFFECTS_OFFSET);
 static Config config{};
 static uint8_t usb_output_mode = 0;
+constexpr size_t WAKE_OFFSET = 128;
+constexpr uint32_t WAKE_MAGIC = 0x31573253; // S2W1
+struct WakeRecord { uint32_t magic; Switch2WakeSettings settings; uint16_t reserved; uint32_t crc; };
+static_assert(EFFECTS_OFFSET + sizeof(EffectsRecord) <= WAKE_OFFSET);
+static_assert(WAKE_OFFSET + sizeof(WakeRecord) <= FLASH_PAGE_SIZE);
+static Switch2WakeSettings switch2_wake_settings{};
 bool is_dse = false;
 
 // 编译期保护
@@ -148,6 +154,12 @@ void config_load() {
     // dedicated sector. The BTstack link-key storage address remains unchanged.
     const uint32_t source = flash_config()->magic == CONFIG_MAGIC ? CONFIG_FLASH_OFFSET : LEGACY_CONFIG_OFFSET;
     const auto *stored = reinterpret_cast<const uint8_t *>(XIP_BASE + source);
+    WakeRecord wake{};
+    std::memcpy(&wake, stored + WAKE_OFFSET, sizeof(wake));
+    switch2_wake_settings = {};
+    if (wake.magic == WAKE_MAGIC && switch2_wake_valid(wake.settings) &&
+        wake.crc == crc32(reinterpret_cast<const uint8_t *>(&wake.settings), sizeof(wake.settings)))
+        switch2_wake_settings = wake.settings;
     EffectsRecord effects{};
     std::memcpy(&effects, stored + EFFECTS_OFFSET, sizeof(effects));
     if (effects.magic == EFFECTS_MAGIC && trigger_settings_valid(effects.settings) &&
@@ -193,6 +205,9 @@ bool config_save() {
     EffectsRecord effects{}; effects.magic = EFFECTS_MAGIC; effects.settings = effects_settings();
     effects.crc = crc32(reinterpret_cast<const uint8_t *>(&effects.settings), sizeof(TriggerSettings));
     std::memcpy(page + EFFECTS_OFFSET, &effects, sizeof(effects));
+    WakeRecord wake{}; wake.magic = WAKE_MAGIC; wake.settings = switch2_wake_settings;
+    wake.crc = crc32(reinterpret_cast<const uint8_t *>(&wake.settings), sizeof(wake.settings));
+    std::memcpy(page + WAKE_OFFSET, &wake, sizeof(wake));
 
     const int rc = flash_safe_execute(config_save_flash_op, page, 1000);
     if (rc != PICO_OK) {
@@ -218,6 +233,9 @@ bool config_save() {
 Config_body& get_config() {
     return config.body;
 }
+
+const Switch2WakeSettings &config_get_switch2_wake() { return switch2_wake_settings; }
+void config_set_switch2_wake(const Switch2WakeSettings &settings) { switch2_wake_settings = settings; }
 
 uint8_t config_get_usb_output_mode() {
     return usb_output_mode;

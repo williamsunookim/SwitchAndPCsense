@@ -12,6 +12,8 @@
 #include "switch_pro_protocol.h"
 #include "switch_rumble_adapter.h"
 #include "effects_runtime.h"
+#include "config.h"
+#include "switch2_wake.h"
 #include <cstring>
 namespace {
 constexpr uint32_t HOST_TAG=0x53574853;
@@ -35,7 +37,7 @@ void trace(uint8_t event,uint16_t link,uint8_t status) {
 uint32_t retry_at=0,save_after=0,reports=0,commands=0,acl_since=0;uint8_t last_error=0;
 uint32_t now() {return to_ms_since_boot(get_absolute_time());}
 bool same(const uint8_t *address) {return claimed && std::memcmp(peer,address,6)==0;}
-void scans() {gap_connectable_control(1);gap_discoverable_control(interrupt?0:1);}
+void scans() {gap_connectable_control(1);gap_discoverable_control(switch_bt_enabled() && !interrupt?1:0);}
 void opened() {
  protocol.reset();protocol.set_mac_address(local);pending_size=0;send_requested=false;host_suspended=false;control_reply_size=0;
  save_pending=true;save_after=now()+1500;scans();
@@ -46,6 +48,7 @@ void lost() {
  effects_stop();retry_at=now()+10000;scans();
 }
 void consume(const uint8_t *p,uint16_t n) {
+ if(!switch_bt_enabled())return;
  if(n>=2) {last_rx_type=p[0];last_rx_id=p[1];}
  if(n<2 || (p[0]!=0xa2 && p[0]!=0x52)) return;
  protocol.handle_output_report(0,p+1,n-1);++commands;
@@ -57,6 +60,9 @@ void switch_bt_init(btstack_packet_handler_t dispatch) {
  pico_unique_board_id_t id{};pico_get_unique_board_id(&id);
  const uint8_t identity[6]={0x7c,0xbb,0x8a,id.id[5],id.id[6],static_cast<uint8_t>(id.id[7]^0x40)};
  std::memcpy(local,identity,6);
+ switch2_wake_init();
+ const auto &wake = config_get_switch2_wake();
+ if(switch2_wake_valid(wake)) std::memcpy(local,wake.source,6);
  hci_set_chipset(btstack_chipset_cyw43_instance());hci_set_bd_addr(local);
  protocol.set_bluetooth_transport(true);protocol.set_mac_address(local);
  gap_set_class_of_device(0x2508);gap_set_local_name("Pro Controller");
@@ -72,8 +78,18 @@ void switch_bt_init(btstack_packet_handler_t dispatch) {
  create_sdp_pnp_record(pnp_sdp,DEVICE_ID_VENDOR_ID_SOURCE_USB,0x057e,0x2009,1);sdp_register_service(pnp_sdp);
 }
 bool switch_bt_is_peer(const uint8_t address[6]) {return same(address);}
-bool switch_bt_connected() {return handle!=HCI_CON_HANDLE_INVALID && control && interrupt && !host_suspended;}
+bool switch_bt_connected() {return switch_bt_enabled() && handle!=HCI_CON_HANDLE_INVALID && control && interrupt && !host_suspended;}
+void switch_bt_mode_changed() {
+ if(!working)return;
+ switch_bt_neutral();
+ if(!switch_bt_enabled()) {
+  switch2_wake_cancel();
+  if(handle!=HCI_CON_HANDLE_INVALID)gap_disconnect(handle);
+ } else retry_at=now();
+ scans();
+}
 void switch_bt_pair() {
+ if(!switch_bt_enabled())return;
  // Keep both link-key databases intact. Incoming pairing can replace the saved host.
  known=false;save_pending=false;
  if(handle!=HCI_CON_HANDLE_INVALID) {trace(0x80,handle,0);gap_disconnect(handle);}
@@ -81,6 +97,7 @@ void switch_bt_pair() {
 }
 bool switch_bt_hci(uint8_t *p,uint16_t size) {
  if(size<2)return false;
+ switch2_wake_hci(p,size);
  bd_addr_t addr{};
  const auto event=hci_event_packet_get_type(p);
  if(event==HCI_EVENT_CONNECTION_COMPLETE)trace(event,hci_event_connection_complete_get_connection_handle(p),hci_event_connection_complete_get_status(p));
@@ -107,6 +124,7 @@ bool switch_bt_hci(uint8_t *p,uint16_t size) {
  case BTSTACK_EVENT_STATE:
   if(btstack_event_state_get_state(p)==HCI_STATE_WORKING) {
    working=true;void *ctx=nullptr;const btstack_tlv_t *tlv=nullptr;btstack_tlv_get_instance(&tlv,&ctx);
+   switch2_wake_ready();
    uint8_t saved_identity[6]{};
    if(tlv && (tlv->get_tag(ctx,0x53574945,saved_identity,6)!=6 || std::memcmp(saved_identity,local,6)!=0)) {
     // Link keys belong to a local adapter identity. Do not reuse a previous trial's keys.
@@ -121,6 +139,9 @@ bool switch_bt_hci(uint8_t *p,uint16_t size) {
   // Sony controllers are peripherals (major 0x05); Switch hosts are consoles.
   link_key_t key;link_key_type_t key_type;
   if(bt_matches_controller(addr) || (!same(addr) && ((cod&0x1f00)==0x0500 || (cod==0 && gap_get_link_key_for_bd_addr(addr,key,&key_type)))))return false;
+  if(!switch_bt_enabled()) {
+   hci_send_cmd(&hci_reject_connection_request,addr,ERROR_CODE_CONNECTION_REJECTED_DUE_TO_UNACCEPTABLE_BD_ADDR);return true;
+  }
   if(handle!=HCI_CON_HANDLE_INVALID && !same(addr)) {
    hci_send_cmd(&hci_reject_connection_request,addr,ERROR_CODE_CONNECTION_REJECTED_DUE_TO_LIMITED_RESOURCES);return true;
   }
@@ -132,6 +153,7 @@ bool switch_bt_hci(uint8_t *p,uint16_t size) {
   last_error=hci_event_connection_complete_get_status(p);
   if(last_error) {lost();return true;}
   handle=hci_event_connection_complete_get_connection_handle(p);acl_since=now();
+  if(!switch_bt_enabled())gap_disconnect(handle);
   return true; // L2CAP/BTstack negotiates security; do not issue a duplicate request.
  case HCI_EVENT_AUTHENTICATION_COMPLETE:
   if(hci_event_authentication_complete_get_connection_handle(p)!=handle)return false;
@@ -141,7 +163,7 @@ bool switch_bt_hci(uint8_t *p,uint16_t size) {
  case HCI_EVENT_ENCRYPTION_CHANGE:
   if(hci_event_encryption_change_get_connection_handle(p)!=handle)return false;
   last_error=hci_event_encryption_change_get_status(p);
-  if(!last_error && hci_event_encryption_change_get_encryption_enabled(p) && outgoing && !control)
+  if(switch_bt_enabled() && !last_error && hci_event_encryption_change_get_encryption_enabled(p) && outgoing && !control)
    last_error=l2cap_create_channel(dispatcher,peer,BLUETOOTH_PSM_HID_CONTROL,672,&control);
   return true;
  case HCI_EVENT_DISCONNECTION_COMPLETE:
@@ -179,6 +201,7 @@ bool switch_bt_l2cap(uint8_t type,uint16_t channel,uint8_t *p,uint16_t size) {
   l2cap_event_incoming_connection_get_address(p,addr);if(!same(addr))return false;
   const auto cid=l2cap_event_incoming_connection_get_local_cid(p);
   const auto psm=l2cap_event_incoming_connection_get_psm(p);
+  if(!switch_bt_enabled()) {l2cap_decline_connection(cid);return true;}
   if(psm==BLUETOOTH_PSM_HID_CONTROL)control=cid;
   else if(psm==BLUETOOTH_PSM_HID_INTERRUPT)interrupt=cid;
   else return false;
@@ -222,10 +245,15 @@ bool switch_bt_l2cap(uint8_t type,uint16_t channel,uint8_t *p,uint16_t size) {
  default:return false;
  }
 }
-void switch_bt_update(const ControllerState &state) {protocol.update_controller(state,static_cast<uint32_t>(time_us_64()));}
-void switch_bt_neutral() {protocol.clear_controller();}
+void switch_bt_update(const ControllerState &state) {
+ if(!switch_bt_connected()) switch2_wake_input((state.buttons & CONTROLLER_BUTTON_HOME)!=0);
+ else switch2_wake_neutral();
+ protocol.update_controller(state,static_cast<uint32_t>(time_us_64()));
+}
+void switch_bt_neutral() {protocol.clear_controller();switch2_wake_neutral();}
 void switch_bt_task() {
- if(!working)return;
+ if(!working || !switch_bt_enabled())return;
+ switch2_wake_task(switch_bt_connected());
  const uint32_t t=now();
  if(save_pending && switch_bt_connected() && static_cast<int32_t>(t-save_after)>=0) {
   void *ctx=nullptr;const btstack_tlv_t *tlv=nullptr;btstack_tlv_get_instance(&tlv,&ctx);
@@ -260,7 +288,7 @@ void switch_bt_event_page(uint8_t out[59],unsigned skip) {
 }
 void switch_bt_diagnostics(uint8_t out[20]) {
  std::memset(out,0,20);out[0]='W';out[1]='L';out[2]=1;
- out[3]=(working?1:0)|(known?2:0)|(switch_bt_connected()?4:0);out[4]=last_error;
+ out[3]=(working?1:0)|(known?2:0)|(switch_bt_connected()?4:0)|(switch_bt_enabled()?8:0);out[4]=last_error;
  out[5]=uint8_t(handle);out[6]=uint8_t(handle>>8);out[7]=uint8_t(control);out[8]=uint8_t(interrupt);
  out[17]=last_rx_type;out[18]=last_rx_id;out[19]=bt_matches_controller(peer)?1:0;
  for(unsigned i=0;i<4;++i) {out[9+i]=uint8_t(reports>>(8*i));out[13+i]=uint8_t(commands>>(8*i));}

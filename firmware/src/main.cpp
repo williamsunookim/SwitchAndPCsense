@@ -73,6 +73,7 @@ critical_section_t report_cs;
 volatile bool report_dirty = false;
 
 void __not_in_flash_func(interrupt_loop)() {
+    if (switch_bt_enabled()) return; // Wireless profile exposes USB diagnostics only.
     if (usb_mode_is_switch()) {
         switch_pro_usb_task();
         return;

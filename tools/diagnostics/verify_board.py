@@ -1,7 +1,7 @@
 """Read only this build's HID diagnostics and verify its running flash CRC."""
 from pathlib import Path
 import argparse,json,struct,time,zlib
-VERSION='integrated-0.4.1-gyro-fix'
+VERSION=json.loads((Path(__file__).resolve().parents[2]/'DEPENDENCIES.lock.json').read_text())['variant']['version']
 def image_from_uf2(path, board="pico_w"):
  family_id,flash_end=(0xe48bff56,0x101fd000) if board=="pico_w" else (0xe48bff59,0x103fc000)
  data=path.read_bytes(); assert data and len(data)%512==0

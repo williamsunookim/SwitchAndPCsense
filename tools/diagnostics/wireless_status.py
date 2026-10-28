@@ -11,6 +11,7 @@ def read_status():
   assert raw[42:45]==b'WL\x01','Wireless diagnostic signature missing'
   flags=raw[45]
   base.update(bluetooth_stack_ready=bool(flags&1),saved_switch_host=bool(flags&2),
+   output_mode='switch_bluetooth' if flags&8 else 'pc_usb',
    switch_connected=bool(flags&4),last_switch_error=raw[46],
    switch_acl_handle=int.from_bytes(raw[47:49],'little'),
    switch_control_cid=raw[49],switch_interrupt_cid=raw[50],

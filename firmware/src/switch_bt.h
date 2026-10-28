@@ -2,9 +2,11 @@
 #pragma once
 #include <cstdint>
 #include "controller_state.h"
+#include "usb_mode.h"
 #ifdef SWITCH_BT_WIRELESS
 #include "btstack_defines.h"
-inline bool switch_bt_enabled() { return true; }
+inline bool switch_bt_enabled() { return usb_mode_is_wireless(); }
+void switch_bt_mode_changed();
 void switch_bt_init(btstack_packet_handler_t dispatch);
 bool switch_bt_hci(uint8_t *packet,uint16_t size);
 bool switch_bt_l2cap(uint8_t type,uint16_t channel,uint8_t *packet,uint16_t size);
@@ -22,4 +24,5 @@ void switch_bt_event_page(uint8_t out[59],unsigned skip);
 #else
 inline bool switch_bt_enabled() { return false; }
 inline bool switch_bt_connected() { return false; }
+inline void switch_bt_mode_changed() {}
 #endif

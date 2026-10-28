@@ -12,6 +12,8 @@
 #include <vector>
 #include "btstack_event.h"
 #include "btstack_tlv.h"
+#include "switch2_wake.h"
+#include "mode_led.h"
 #include "gap.h"
 #include "l2cap.h"
 #include "pico/cyw43_arch.h"
@@ -362,16 +364,14 @@ void bt_inquiring_led() {
         return;
     }
 
-    if (hid_interrupt_cid != 0) {
+#if ENABLE_BATT_LED
+    if (battery_led_active()) return;
+#endif
+    if (hid_interrupt_cid != 0 || !bt_inquiring) {
+        mode_led_task();
         return;
     }
     static bool led_status = false;
-    if (!bt_inquiring) {
-        if (led_status) {
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
-        }
-        return;
-    }
     static auto last_time = time_us_32();
     if (time_us_32() - last_time > 200 * 1000) {
         last_time = time_us_32();
@@ -598,9 +598,8 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             // wake is on (stay on the bus so a returning controller can signal a host wake) or
             // while the host is suspended -- hiding then re-showing re-enumerates, and a USB
             // re-connect wakes a sleeping host. Defer the hide until the host is awake.
-            if (!switch_bt_enabled() && !get_config().enable_wake && !tud_suspended()) {
-                tud_disconnect();
-            }
+            // Keep the neutral USB device available in both profiles so mode
+            // selection and diagnostics work even with DualSense powered off.
 #endif
             gap_connectable_control(1);
             gap_discoverable_control(1);
@@ -745,6 +744,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     printf("[L2CAP] Remote Interrupt MTU: %d\n",mtu);
 
                     wake_on_bt_connect();
+                    if(switch_bt_enabled() && !switch_bt_connected()) switch2_wake_request();
 
                     gap_connectable_control(true);
                     gap_discoverable_control(!switch_bt_connected());

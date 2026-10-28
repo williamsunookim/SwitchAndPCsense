@@ -14,6 +14,7 @@
 #include "switch_pro_usb.h"
 #include "tusb.h"
 #include "wake.h"
+extern bool spk_active;
 
 namespace {
 
@@ -29,28 +30,38 @@ void select_mode(UsbOutputMode mode) {
 } // namespace
 
 bool usb_mode_is_switch() {
+#ifdef SWITCH_BT_WIRELESS
+    return false; // Both profiles keep the DualSense USB descriptor for diagnostics.
+#else
     return active_mode == UsbOutputMode::SwitchPro;
+#endif
+}
+
+bool usb_mode_is_wireless() {
+#ifdef SWITCH_BT_WIRELESS
+    return active_mode == UsbOutputMode::SwitchPro;
+#else
+    return false;
+#endif
 }
 
 const char *usb_mode_name() {
-    return usb_mode_is_switch() ? "Switch Pro" : "DualSense";
+    return usb_mode_is_wireless() ? "Switch Bluetooth" : (usb_mode_is_switch() ? "Switch Pro" : "PC DualSense");
 }
 
 void usb_mode_init() {
     active_mode = config_get_usb_output_mode() == static_cast<uint8_t>(UsbOutputMode::SwitchPro)
                       ? UsbOutputMode::SwitchPro
                       : UsbOutputMode::DualSense;
-    active_mode = UsbOutputMode::DualSense; // USB is diagnostics only in this experimental build.
     switch_pro_usb_init();
     printf("[USB] Output mode: %s\n", usb_mode_name());
 }
 
 void usb_mode_apply_config() {
-    active_mode = config_get_usb_output_mode() == static_cast<uint8_t>(UsbOutputMode::SwitchPro)
+    const auto mode = config_get_usb_output_mode() == static_cast<uint8_t>(UsbOutputMode::SwitchPro)
                       ? UsbOutputMode::SwitchPro
                       : UsbOutputMode::DualSense;
-    active_mode = UsbOutputMode::DualSense;
-    switch_pro_usb_reset();
+    usb_mode_set(mode);
 }
 
 void usb_mode_task() {
@@ -62,15 +73,21 @@ void usb_mode_task() {
 }
 
 void usb_mode_toggle_and_reconnect() {
-    if (switch_bt_enabled()) { switch_bt_pair(); return; }
-    const UsbOutputMode next = usb_mode_is_switch()
+    const UsbOutputMode next = active_mode == UsbOutputMode::SwitchPro
                                    ? UsbOutputMode::DualSense
                                    : UsbOutputMode::SwitchPro;
+    usb_mode_set(next);
+}
+
+void usb_mode_set(UsbOutputMode mode) {
+    if (mode == active_mode) return;
     effects_stop();
     set_mic_active(false);
+    spk_active = false;
     wake_note_usb_reconnect();
     tud_disconnect();
-    select_mode(next);
+    select_mode(mode);
+    switch_bt_mode_changed();
     switch_pro_usb_reset();
     save_pending = !config_save();
     if (save_pending) save_after_ms = to_ms_since_boot(get_absolute_time()) + 2000;

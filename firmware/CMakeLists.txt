@@ -109,6 +109,8 @@ add_executable(pico-dualsense-switch-bridge
         src/dualsense_parser.cpp
         src/switch_pro_protocol.cpp
         src/switch_bt.cpp
+        src/switch2_wake.cpp
+        src/switch2_wake_packet.cpp
         src/switch_rumble.cpp
         src/switch_haptics_synth.cpp
         src/haptic_calibration.cpp
@@ -117,6 +119,7 @@ add_executable(pico-dualsense-switch-bridge
         src/switch_rumble_adapter.cpp
         src/switch_pro_usb.cpp
         src/usb_mode.cpp
+        src/mode_led.cpp
         src/usb.cpp
         src/audio.cpp
         src/bt.cpp
@@ -153,12 +156,15 @@ add_subdirectory(.deps/opus)
 # .rodata relocation below leaves them in flash. Keep the CELT encoder, all
 # decoder paths, their tables, queue depths and core1 stack unchanged.
 # Source properties must be set in the directory that owns the opus target.
+# Encoder init/control stay in flash for the dual-profile RAM budget; the three
+# encode entry points are explicitly relocated below to retain the hot path.
 set_property(SOURCE
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/opus/src/analysis.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/opus/src/mlp.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/opus/src/mlp_data.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/opus/silk/NSQ.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/opus/silk/NSQ_del_dec.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/opus/src/opus_encoder.c"
     TARGET_DIRECTORY opus APPEND PROPERTY COMPILE_OPTIONS
     -ffunction-sections -fdata-sections)
 
@@ -172,7 +178,11 @@ set_property(SOURCE
 # leaves room for Opus initialization and the other runtime heap allocations.
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
-    COMMAND ${CMAKE_OBJCOPY} --rename-section .text=.time_critical.opus_text --rename-section .rodata=.time_critical.opus_rodata --rename-section .rodata.str1.4=.time_critical.opus_strings $<TARGET_FILE:opus>
+    COMMAND ${CMAKE_OBJCOPY} --rename-section .text=.time_critical.opus_text --rename-section .rodata=.time_critical.opus_rodata --rename-section .rodata.str1.4=.time_critical.opus_strings
+        --rename-section .text.opus_encode_native=.time_critical.opus_encode_native
+        --rename-section .text.opus_encode=.time_critical.opus_encode
+        --rename-section .text.opus_encode_float=.time_critical.opus_encode_float
+        $<TARGET_FILE:opus>
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/opus_ram_relocate.stamp
     DEPENDS $<TARGET_FILE:opus>
     COMMENT "Phase A.3: relocating libopus to .time_critical.* sections"
@@ -371,6 +381,7 @@ target_link_libraries(pico-dualsense-switch-bridge
         hardware_timer
         hardware_flash
         pico_btstack_classic
+        pico_btstack_ble
 #        pico_cyw43_arch_threadsafe_background
         pico_cyw43_arch_poll
         pico_btstack_cyw43

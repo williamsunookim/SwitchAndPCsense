@@ -10,6 +10,7 @@
 
 #include "bt.h"
 #include "switch_bt.h"
+#include "switch2_wake.h"
 #include "config.h"
 #include "device/usbd.h"
 #include "pico/time.h"
@@ -63,6 +64,9 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // F6 func 0x30 selects this page: Switch motion diagnostics, readable from
     // the PC USB side while the console is linked over Bluetooth.
     // Page 4: DualSense sensor-clock spacing histogram.
+    if (report_id == 0xf9 && motion_page == 5 && reqlen >= 24) {
+        switch2_wake_status(buffer); return 24;
+    }
     if (report_id == 0xf9 && motion_page == 4 && reqlen >= 25) {
         buffer[0] = 'G'; switch_bt_gap_diagnostics(buffer + 1); return 25;
     }
@@ -121,7 +125,21 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     if (report_id == 0xf6 && buffer[0] == 0x20 && bufsize >= 1 + sizeof(TriggerSettings)) {
         TriggerSettings s; std::memcpy(&s, buffer + 1, sizeof(s)); effects_configure(s); return;
     }
-    if (report_id == 0xf6 && buffer[0] == 0x30) {motion_page = buffer[1];return;}
+    if (report_id == 0xf6 && buffer[0] == 0x30 && bufsize >= 2) {motion_page = buffer[1];return;}
+    if (report_id == 0xf6 && buffer[0] == 0x31) {
+        if (bufsize >= 15) {
+            Switch2WakeSettings s{};
+            std::memcpy(s.source, buffer+1, 6); std::memcpy(s.target, buffer+7, 6);
+            s.product = uint16_t(buffer[13]) | (uint16_t(buffer[14]) << 8);
+            switch2_wake_configure(s);
+        }
+        return;
+    }
+    if (report_id == 0xf6 && buffer[0] == 0x32) {switch2_wake_request();return;}
+    if (report_id == 0xf6 && buffer[0] == 0x33) {
+        if (bufsize >= 2 && buffer[1] <= 1) usb_mode_set(static_cast<UsbOutputMode>(buffer[1]));
+        return;
+    }
     if (report_id == 0xf6 && buffer[0] == 0x21) {switch_bt_pair();return;}
     if (report_id == 0xf6 && buffer[0] == 0x22) {if(!bt_is_connected())bt_bootsel_click_action();return;}
     if (report_id == 0xf6 && buffer[0] == 0x04) {

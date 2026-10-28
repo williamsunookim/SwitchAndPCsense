@@ -37,6 +37,8 @@ void battery_led_note_report(void) {
     last_report_us = time_us_64();
 }
 
+bool battery_led_active(void) { return blinking; }
+
 void battery_led_on_disconnect(void) {
     // Stop any in-progress blink and force the LED off immediately. Zero
     // last_report_us so the tick's stale-check early-returns until a fresh

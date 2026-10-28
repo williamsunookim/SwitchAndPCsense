@@ -2,6 +2,8 @@
 enum hid_report_type_t { HID_REPORT_TYPE_INVALID, HID_REPORT_TYPE_INPUT, HID_REPORT_TYPE_OUTPUT, HID_REPORT_TYPE_FEATURE };
 bool tud_mounted();
 bool tud_suspended();
+bool tud_connect();
+bool tud_disconnect();
 
 #include <cstdint>
 #define TUSB_DESC_DEVICE 1

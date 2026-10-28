@@ -32,10 +32,13 @@ int main() {
     std::memset(fake_flash,0xff,sizeof(fake_flash)); config_load();
     assert(config_get_usb_output_mode()==0 && get_config().config_version==5);
     settings=botw_bow_settings(); config_set_usb_output_mode(1);
+    const Switch2WakeSettings wake{{0x98,0xe2,0x55,1,2,3},{0x98,0xe2,0x55,4,5,6},0x2069};
+    config_set_switch2_wake(wake);
     assert(config_save() && erases==1);
     uint8_t saved[FLASH_PAGE_SIZE]; std::memcpy(saved,fake_flash+storage,sizeof(saved));
     settings={}; config_set_usb_output_mode(0); config_load();
     assert(config_get_usb_output_mode()==1 && settings.profile==1);
+    assert(std::memcmp(&config_get_switch2_wake(), &wake, sizeof(wake))==0);
     // Migration preserves mode/settings without touching the SDK's pairing banks.
     std::memset(fake_flash+storage,0xff,FLASH_SECTOR_SIZE);
     std::memset(fake_flash+PICO_FLASH_BANK_STORAGE_OFFSET,0x5a,PICO_FLASH_BANK_TOTAL_SIZE);
@@ -46,6 +49,9 @@ int main() {
     assert(config_save());
     assert(std::memcmp(pairing_banks,fake_flash+PICO_FLASH_BANK_STORAGE_OFFSET,sizeof(pairing_banks))==0);
     assert(std::memcmp(fake_flash+legacy,saved,sizeof(saved))==0);
+    assert(std::memcmp(&config_get_switch2_wake(), &wake, sizeof(wake))==0);
+    fake_flash[storage+128+4]^=1; config_load();
+    assert(!switch2_wake_valid(config_get_switch2_wake()));
     // A corrupted effects record cannot load unchecked motor parameters.
     fake_flash[storage+64+4+1]^=3; settings={}; config_load(); assert(settings.profile==0);
     // Body corruption resets gain rather than propagating a bad float.

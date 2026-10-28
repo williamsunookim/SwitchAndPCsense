@@ -7,6 +7,8 @@
 uint32_t fake_now = 1;
 bool connected = true, mounted = true, suspended = false, switch_mode = true;
 bool usb_mode_is_switch() { return switch_mode; }
+bool wireless=true;
+bool usb_mode_is_wireless() { return wireless; }
 unsigned events=0;
 std::vector<int8_t> samples;
 bool bt_is_connected() { return connected; }
@@ -28,5 +30,8 @@ int main() {
     console_connected=true;fake_now+=20;switch_rumble_adapter_task();assert(samples.empty());
     switch_rumble_adapter_apply(state);switch_rumble_adapter_task();assert(events==2 && !samples.empty());
     connected=false;samples.clear();fake_now+=20;switch_rumble_adapter_task();assert(samples.empty());
+    connected=true;wireless=false;mounted=true;suspended=false;
+    switch_rumble_adapter_apply(state);switch_rumble_adapter_task();
+    assert(samples.empty() && events==2); // Switch rumble cannot reach the PC profile.
     std::cout << "wireless haptics without USB and disconnect safety passed\n";
 }

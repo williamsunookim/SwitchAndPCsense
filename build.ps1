@@ -49,7 +49,7 @@ $correction = if ($DisableHapticCorrection) { 'OFF' } else { 'ON' }
     -DCMAKE_BUILD_TYPE=Release "-DPICO_BOARD=$Board" "-DPICO_W_BUILD=$picoW" "-DPICO_SDK_PATH=$sdk" `
     "-DPICO_TOOLCHAIN_PATH=$arm" "-DCMAKE_MAKE_PROGRAM=$ninja" "-DPython3_EXECUTABLE=$PythonExecutable" `
     "-DHAPTIC_CORRECTION=$correction" "-DHAPTIC_LEFT_TRIM_Q8=$LeftTrimQ8" "-DHAPTIC_RIGHT_TRIM_Q8=$RightTrimQ8" `
-    '-DVERSION=integrated-0.4.1-gyro-fix' "-DPICOTOOL_FETCH_FROM_GIT_PATH=$tools/picotool"
+    '-DVERSION=integrated-0.4.4-mode-led' "-DPICOTOOL_FETCH_FROM_GIT_PATH=$tools/picotool"
 if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
 & $cmake --build $build --parallel 6
 if ($LASTEXITCODE -ne 0) { throw 'Firmware build failed' }

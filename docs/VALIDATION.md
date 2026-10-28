@@ -1,5 +1,47 @@
 # Structure validation ? 2026-10-28
 
+## Mode LED — 2026-10-29
+
+- Version: `integrated-0.4.4-mode-led`; Pico W and Pico 2 W builds passed their
+  memory budget checks. No new protocol or audio routing changes were made.
+- Idle/connected mode indication repeats every two seconds: one 120 ms pulse
+  for PC USB, two pulses for Switch Bluetooth. Pairing-clear, low-battery and
+  pairing indications take priority; the existing LED-disable setting is honored.
+- Connected Pico 2 W was flashed and its 150 MHz boot, version and application
+  CRC were checked. Saved PC mode was retained. LED timing was not optically measured.
+- Flash report: `dist/PICO2_LED_FLASH_VERIFICATION.json`.
+
+## PC USB / Switch Bluetooth mode switching — 2026-10-29
+
+- Version: `integrated-0.4.3-mode-switch`; both board builds passed memory checks.
+- 13 C++ host groups and 19 Python tests passed. Mode tests cover toggling,
+  persisted selection, save retry, blocking console wake in PC mode, excluding
+  Switch rumble from PC, and retaining native PC trigger commands.
+- Connected Pico 2 W was flashed; 150 MHz boot and application flash CRC matched
+  `dist/Pico-2-W.uf2`.
+- Hardware: selected Switch Bluetooth via USB, rebooted through BOOTSEL and
+  reflashed the same image, confirmed saved Switch mode restored, then selected
+  PC USB and confirmed current PC mode. No pairing information was cleared.
+- DualSense was disconnected during the hardware mode check. PC gameplay,
+  PC audio/haptics and actual console pairing/wake remain unverified.
+- Opus encoder init/control remain in flash to preserve the 128 KiB heap reserve;
+  encode entry points remain in RAM. PC audio timing needs hardware validation.
+- Latest flash diagnostics: `dist/PICO2_MODE_FLASH_VERIFICATION.json`.
+
+## Switch 2 wake experiment — 2026-10-28
+
+- Version: `integrated-0.4.2-switch2-wake`.
+- Both board Release builds linked and passed their memory budget checks.
+- All 12 C++ host test groups and 19 Python tests passed, including wake packet,
+  burst/cooldown/error handling, settings CRC/persistence and beacon decoding.
+- Both UF2 files were checked for block magic, application family, numbering and
+  flash bounds. The Pico 2 W image includes the SDK's RP2350 metadata block.
+- Generated artifact sizes and SHA256 are in `dist/SWITCH2_WAKE_BUILD.json`.
+- No board was flashed; console wake, BLE/Classic coexistence and reconnection
+  after wake remain unverified on hardware. See [setup](SWITCH2_WAKE.md).
+
+## Earlier structure validation
+
 - Shared source: integrated-0.4.1-gyro-fix, Pico W and Pico 2 W.
 - Both Release builds passed after consolidation.
 - All 10 C++ host test groups and 14 Python unit tests passed.

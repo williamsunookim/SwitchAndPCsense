@@ -15,6 +15,8 @@ bool bt_is_connected() { return connected; }
 bool tud_mounted() { return mounted; }
 bool tud_suspended() { return suspended; }
 bool usb_mode_is_switch() { return switch_mode; }
+bool wireless=true;
+bool usb_mode_is_wireless() { return wireless; }
 void bt_flush_output() { ++flushes; packets.clear(); }
 void bt_write(const uint8_t *p, uint16_t n) { packets.emplace_back(p, p+n); }
 void switch_rumble_adapter_stop() {}
@@ -37,5 +39,11 @@ int main() {
     console_connected=false;advance(1);output(out);assert(out.RightTriggerFFB[0]==5);
     console_connected=true;input(255);advance(20);output(out);assert(out.RightTriggerFFB[0]==0x21);
     connected=false;advance(1);output(out);assert(out.RightTriggerFFB[0]==5);
+    connected=true;wireless=false;mounted=true;suspended=false;
+    effects_stop();input(0);advance(20);output(out);assert(out.RightTriggerFFB[0]==5);
+    const uint8_t native[11]={0x21,1,2,3}; effects_native(1,native);
+    advance(20);output(out);assert(std::memcmp(out.RightTriggerFFB,native,11)==0);
+    wireless=true;effects_stop();input(0);advance(20);output(out);
+    assert(out.RightTriggerFFB[0]==0x21 && std::memcmp(out.RightTriggerFFB,native,11)!=0);
     std::cout << "wireless effects without USB and disconnect safety passed\n";
 }

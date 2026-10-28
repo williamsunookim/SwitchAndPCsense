@@ -15,6 +15,8 @@ enum class UsbOutputMode : unsigned char {
 void usb_mode_init();
 void usb_mode_task();
 bool usb_mode_is_switch();
+bool usb_mode_is_wireless();
+void usb_mode_set(UsbOutputMode mode);
 void usb_mode_apply_config();
 void usb_mode_toggle_and_reconnect();
 const char *usb_mode_name();
