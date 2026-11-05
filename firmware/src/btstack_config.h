@@ -13,7 +13,13 @@
 #endif
 #define ENABLE_LE_PERIPHERAL
 #define ENABLE_LE_CENTRAL // passive wake-beacon learning; no LE connections
-#define MAX_ATT_DB_SIZE 64 // no GATT services: wake uses nonconnectable advertisements
+#ifdef SWITCH2_PRO_NATIVE
+#define MAX_ATT_DB_SIZE 2304
+#define ATT_REQUEST_BUFFER_SIZE 256
+#define ENABLE_SOFTWARE_AES128
+#else
+#define MAX_ATT_DB_SIZE 64
+#endif
 
 
 // CYW43 HCI Transport requires pre-buffer space for packet header

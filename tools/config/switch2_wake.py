@@ -99,6 +99,7 @@ def status(device):
             'reboot_required': bool(page[3] & 4),
             'learning': bool(page[3] & 8), 'candidate_seen': bool(page[3] & 16),
             'learning_supported': bool(page[3] & 32),
+            'native_pairing': bool(page[3] & 64),
             'scan_reports': int.from_bytes(page[24:28], 'little') if len(page) >= 32 else None,
             'scan_matches': int.from_bytes(page[28:32], 'little') if len(page) >= 32 else None,
             'result': result[page[4]] if page[4] < len(result) else page[4],
@@ -109,6 +110,8 @@ def status(device):
 
 def learn(device, args):
     initial = status(device)
+    if initial['native_pairing']:
+        raise RuntimeError('Native Pro Controller 2 mode pairs directly. Use output_mode.py switch, then output_mode.py pair; no donor or learning is needed.')
     if not initial['learning_supported']:
         raise RuntimeError('Pico learning requires integrated-0.4.5 firmware or newer')
     if initial['learning']:

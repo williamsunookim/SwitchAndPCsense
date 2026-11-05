@@ -7,6 +7,8 @@ import sys
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'build/host-tests'
 GROUPS={
+ 'switch2_pro':['src/switch2_pro_protocol.cpp','tests/test_switch2_pro.cpp'],
+ 'switch2_haptics':['src/switch_haptics_synth.cpp','src/haptic_calibration.cpp','src/switch_rumble_adapter.cpp','tests/test_switch2_haptics.cpp'],
  'output_mode':['src/usb_mode.cpp','tests/test_output_mode.cpp'],
  'switch2_wake_packet':['src/switch2_wake_packet.cpp','tests/test_switch2_wake_packet.cpp'],
  'switch2_wake_runtime':['src/switch2_wake.cpp','src/switch2_wake_packet.cpp','tests/test_switch2_wake_runtime.cpp'],
@@ -34,11 +36,11 @@ def main():
   exe=OUT/(name+('.exe' if os.name=='nt' else ''))
   if msvc:
    args=['cl','/nologo','/utf-8','/std:c++20','/EHsc','/W4','/WX','/wd4146','/wd4103', '/I'+str(ROOT/'src'),'/Fo'+str(OUT)+'/', '/Fe:'+str(exe)]
-   if name in ('runtime','wireless_runtime','wireless_haptics','adapter','flash','isolation','switch2_wake_runtime','output_mode'): args+=['/I'+str(ROOT/'tests/stubs'),'/FIhost_compat.h']
+   if name in ('runtime','wireless_runtime','wireless_haptics','adapter','flash','isolation','switch2_wake_runtime','output_mode','switch2_haptics'): args+=['/I'+str(ROOT/'tests/stubs'),'/FIhost_compat.h']
   else:
    args=[os.environ.get('CXX','g++'),'-std=c++20','-Wall','-Wextra','-Werror','-I'+str(ROOT/'src'),'-o',str(exe)]
-   if name in ('runtime','wireless_runtime','wireless_haptics','adapter','flash','isolation','output_mode'): args+=['-I'+str(ROOT/'tests/stubs')]
-  if name in ('wireless_runtime','wireless_haptics','output_mode'): args+=['/DSWITCH_BT_WIRELESS=1' if msvc else '-DSWITCH_BT_WIRELESS=1']
+   if name in ('runtime','wireless_runtime','wireless_haptics','adapter','flash','isolation','output_mode','switch2_haptics'): args+=['-I'+str(ROOT/'tests/stubs')]
+  if name in ('wireless_runtime','wireless_haptics','output_mode','switch2_haptics'): args+=['/DSWITCH_BT_WIRELESS=1' if msvc else '-DSWITCH_BT_WIRELESS=1']
   args += [str(ROOT/s) for s in sources]
   if name == 'switch2_wake_runtime':
    args += [('/I' if msvc else '-I')+str(ROOT/'tests/wake_stubs'),('/I' if msvc else '-I')+str(ROOT/'tests/stubs')]

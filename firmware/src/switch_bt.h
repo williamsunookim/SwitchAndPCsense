@@ -7,6 +7,12 @@
 #include "btstack_defines.h"
 inline bool switch_bt_enabled() { return usb_mode_is_wireless(); }
 void switch_bt_mode_changed();
+bool switch_bt_wake_request();
+#ifdef SWITCH2_PRO_NATIVE
+void switch_bt_pro2_diagnostics(uint8_t out[55]);
+void switch_bt_pro2_wake_status(uint8_t out[32]);
+void switch_bt_pro2_att_trace(uint8_t out[55]);
+#endif
 void switch_bt_init(btstack_packet_handler_t dispatch);
 bool switch_bt_hci(uint8_t *packet,uint16_t size);
 bool switch_bt_l2cap(uint8_t type,uint16_t channel,uint8_t *packet,uint16_t size);

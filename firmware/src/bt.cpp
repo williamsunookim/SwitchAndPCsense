@@ -744,7 +744,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     printf("[L2CAP] Remote Interrupt MTU: %d\n",mtu);
 
                     wake_on_bt_connect();
-                    if(switch_bt_enabled() && !switch_bt_connected()) switch2_wake_request();
+                    if(switch_bt_enabled() && !switch_bt_connected()) switch_bt_wake_request();
 
                     gap_connectable_control(true);
                     gap_discoverable_control(!switch_bt_connected());

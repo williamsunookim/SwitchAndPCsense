@@ -65,9 +65,22 @@ uint16_t pico_cmd_get(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
     // the PC USB side while the console is linked over Bluetooth.
     // Page 4: DualSense sensor-clock spacing histogram.
     if (report_id == 0xf9 && motion_page == 5 && reqlen >= 24) {
+#ifdef SWITCH2_PRO_NATIVE
+        uint8_t page[32]{};switch_bt_pro2_wake_status(page);
+        const uint16_t size=reqlen>=32?32:24;std::memcpy(buffer,page,size);return size;
+#else
         const uint16_t size = reqlen >= 32 ? 32 : 24;
         switch2_wake_status(buffer, size); return size;
+#endif
     }
+#ifdef SWITCH2_PRO_NATIVE
+    if (report_id == 0xf9 && motion_page == 6 && reqlen >= 55) {
+        switch_bt_pro2_diagnostics(buffer);return 55;
+    }
+    if (report_id == 0xf9 && motion_page == 7 && reqlen >= 55) {
+        switch_bt_pro2_att_trace(buffer);return 55;
+    }
+#endif
     if (report_id == 0xf9 && motion_page == 4 && reqlen >= 25) {
         buffer[0] = 'G'; switch_bt_gap_diagnostics(buffer + 1); return 25;
     }
@@ -128,21 +141,25 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
     }
     if (report_id == 0xf6 && buffer[0] == 0x30 && bufsize >= 2) {motion_page = buffer[1];return;}
     if (report_id == 0xf6 && buffer[0] == 0x31) {
+#ifndef SWITCH2_PRO_NATIVE
         if (bufsize >= 15) {
             Switch2WakeSettings s{};
             std::memcpy(s.source, buffer+1, 6); std::memcpy(s.target, buffer+7, 6);
             s.product = uint16_t(buffer[13]) | (uint16_t(buffer[14]) << 8);
             switch2_wake_configure(s);
         }
+#endif
         return;
     }
-    if (report_id == 0xf6 && buffer[0] == 0x32) {switch2_wake_request();return;}
+    if (report_id == 0xf6 && buffer[0] == 0x32) {switch_bt_wake_request();return;}
     if (report_id == 0xf6 && buffer[0] == 0x33) {
         if (bufsize >= 2 && buffer[1] <= 1) usb_mode_set(static_cast<UsbOutputMode>(buffer[1]));
         return;
     }
     if (report_id == 0xf6 && buffer[0] == 0x34) {
+#ifndef SWITCH2_PRO_NATIVE
         if (bufsize >= 8) switch2_wake_learn(buffer[1], buffer+2);
+#endif
         return;
     }
     if (report_id == 0xf6 && buffer[0] == 0x35) {switch2_wake_learn_cancel();return;}

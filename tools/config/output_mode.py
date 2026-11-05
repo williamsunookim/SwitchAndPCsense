@@ -2,6 +2,7 @@
 import argparse
 import json
 import time
+import re
 from switch2_wake import open_pico
 
 
@@ -11,9 +12,11 @@ def read_mode(device):
     if len(raw) < 62 or raw[42:45] != b'WL\x01':
         raise RuntimeError('Output mode diagnostics unavailable')
     version = bytes(device.get_feature_report(0xf8, 64))[1:].split(b'\0', 1)[0].decode()
-    if not version.startswith(('integrated-0.4.3-', 'integrated-0.4.4-', 'integrated-0.4.5-')):
+    match = re.match(r'^integrated-(\d+)\.(\d+)\.(\d+)-', version)
+    if not match or tuple(map(int, match.groups())) < (0, 4, 3):
         raise RuntimeError('Requires integrated-0.4.3 mode-switch firmware')
     return dict(mode='switch' if raw[45] & 8 else 'pc',
+                controller_model='switch2_pro' if raw[45] & 16 else 'switch1_pro',
                 dualsense_connected=bool(raw[17] & 2),
                 switch_connected=bool(raw[45] & 4), version=version)
 

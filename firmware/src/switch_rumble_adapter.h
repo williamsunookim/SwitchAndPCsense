@@ -8,6 +8,7 @@
 #include "switch_rumble.h"
 
 void switch_rumble_adapter_apply(const SwitchRumbleState &rumble);
+void switch_rumble_adapter_apply_sequence(const SwitchRumbleState states[3]);
 void switch_rumble_adapter_stop();
 void switch_rumble_adapter_task();
 

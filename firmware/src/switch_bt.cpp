@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#ifndef SWITCH2_PRO_NATIVE
 // Separate host/peer state for Switch output; DualSense host lives in bt.cpp.
 #include "switch_bt.h"
 #include "bt.h"
@@ -301,3 +302,5 @@ void switch_bt_trace(uint8_t out[26]) {
  for(unsigned i=0;i<count;++i)std::memcpy(out+2+i*6,events[(event_head+EVENT_SLOTS-count+i)%EVENT_SLOTS],6);
  bd_addr_t actual{};gap_local_bd_addr(actual);std::memcpy(out+20,actual,6);
 }
+bool switch_bt_wake_request() {return switch2_wake_request();}
+#endif
