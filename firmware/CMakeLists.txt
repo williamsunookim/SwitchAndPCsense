@@ -26,6 +26,7 @@ endif ()
 
 option(PICO_W_BUILD "Pico W: native haptic PCM without Opus speaker/mic" ON)
 option(SWITCH2_PRO_NATIVE "Emulate a native Switch 2 Pro Controller over BLE" ON)
+option(SWITCH2_ESP32_LINK "Pro Controller 2 BLE runs on an ESP32-S3 over UART1 (GP4/GP5)" OFF)
 option(WAVESHARE_RP2350B_PLUS_W_BUILD "Build for Waveshare RP2350B-Plus-W (USB-C, 16MB flash, RM2 wireless)" OFF)
 
 if (PICO_W_BUILD AND WAVESHARE_RP2350B_PLUS_W_BUILD)
@@ -112,6 +113,8 @@ add_executable(pico-dualsense-switch-bridge
         src/switch_bt.cpp
         src/switch2_pro_bt.cpp
         src/switch2_pro_protocol.cpp
+        src/switch2_esp_link.cpp
+        src/switch2_link.cpp
         src/switch2_wake.cpp
         src/switch2_wake_packet.cpp
         src/switch_rumble.cpp
@@ -428,4 +431,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_compile_definitions(pico-dualsense-switch-bridge PRIVATE SWITCH_BT_WIRELESS=1)
 if(SWITCH2_PRO_NATIVE)
     target_compile_definitions(pico-dualsense-switch-bridge PRIVATE SWITCH2_PRO_NATIVE=1)
+    if(SWITCH2_ESP32_LINK)
+        target_compile_definitions(pico-dualsense-switch-bridge PRIVATE SWITCH2_ESP32_LINK=1)
+    endif()
 endif()

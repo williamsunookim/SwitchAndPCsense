@@ -3,6 +3,7 @@
     [switch]$Bootstrap, [switch]$Test, [string]$PythonExecutable = '',
     [switch]$DisableHapticCorrection,
     [switch]$LegacySwitch,
+    [switch]$Esp32Link,
     [ValidateRange(0,256)][int]$LeftTrimQ8 = 256,
     [ValidateRange(0,256)][int]$RightTrimQ8 = 256
 )
@@ -46,13 +47,15 @@ $env:VSLANG = '1033'
 $build = Join-Path $projectRoot "firmware/build/$Board"
 $picoW = if ($Board -eq 'pico_w') { 'ON' } else { 'OFF' }
 $correction = if ($DisableHapticCorrection) { 'OFF' } else { 'ON' }
+if ($LegacySwitch -and $Esp32Link) { throw '-LegacySwitch and -Esp32Link cannot be combined' }
 $nativePro2 = if ($LegacySwitch) { 'OFF' } else { 'ON' }
-$firmwareVersion = if ($LegacySwitch) { 'integrated-0.5.0-switch1-bt' } else { 'integrated-0.5.0-pro2-ble' }
+$esp32 = if ($Esp32Link) { 'ON' } else { 'OFF' }
+$firmwareVersion = if ($LegacySwitch) { 'integrated-0.5.0-switch1-bt' } elseif ($Esp32Link) { 'integrated-0.5.0-pro2-esp32' } else { 'integrated-0.5.0-pro2-ble' }
 & $cmake -S "$projectRoot/firmware" -B $build -G Ninja `
     -DCMAKE_BUILD_TYPE=Release "-DPICO_BOARD=$Board" "-DPICO_W_BUILD=$picoW" "-DPICO_SDK_PATH=$sdk" `
     "-DPICO_TOOLCHAIN_PATH=$arm" "-DCMAKE_MAKE_PROGRAM=$ninja" "-DPython3_EXECUTABLE=$PythonExecutable" `
     "-DHAPTIC_CORRECTION=$correction" "-DHAPTIC_LEFT_TRIM_Q8=$LeftTrimQ8" "-DHAPTIC_RIGHT_TRIM_Q8=$RightTrimQ8" `
-    "-DSWITCH2_PRO_NATIVE=$nativePro2" "-DVERSION=$firmwareVersion" "-DPICOTOOL_FETCH_FROM_GIT_PATH=$tools/picotool"
+    "-DSWITCH2_PRO_NATIVE=$nativePro2" "-DSWITCH2_ESP32_LINK=$esp32" "-DVERSION=$firmwareVersion" "-DPICOTOOL_FETCH_FROM_GIT_PATH=$tools/picotool"
 if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
 & $cmake --build $build --parallel 6
 if ($LASTEXITCODE -ne 0) { throw 'Firmware build failed' }

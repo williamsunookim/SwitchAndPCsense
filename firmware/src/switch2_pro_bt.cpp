@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Native Pro Controller 2 BLE peripheral. The DualSense remains a Classic HID
 // peer in bt.cpp. Nintendo's custom pairing uses raw LL LTK replies, not SMP.
-#ifdef SWITCH2_PRO_NATIVE
+#if defined(SWITCH2_PRO_NATIVE) && !defined(SWITCH2_ESP32_LINK)
 #include "switch_bt.h"
 #include "switch2_pro_protocol.h"
 #include "bt.h"

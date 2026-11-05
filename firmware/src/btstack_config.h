@@ -13,7 +13,7 @@
 #endif
 #define ENABLE_LE_PERIPHERAL
 #define ENABLE_LE_CENTRAL // passive wake-beacon learning; no LE connections
-#ifdef SWITCH2_PRO_NATIVE
+#if defined(SWITCH2_PRO_NATIVE) && !defined(SWITCH2_ESP32_LINK)
 #define MAX_ATT_DB_SIZE 2304
 #define ATT_REQUEST_BUFFER_SIZE 256
 #define ENABLE_SOFTWARE_AES128

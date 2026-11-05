@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'build/host-tests'
 GROUPS={
  'switch2_pro':['src/switch2_pro_protocol.cpp','tests/test_switch2_pro.cpp'],
+ 'switch2_link':['src/switch2_link.cpp','src/aes128.cpp','tests/test_switch2_link.cpp'],
  'switch2_haptics':['src/switch_haptics_synth.cpp','src/haptic_calibration.cpp','src/switch_rumble_adapter.cpp','tests/test_switch2_haptics.cpp'],
  'output_mode':['src/usb_mode.cpp','tests/test_output_mode.cpp'],
  'switch2_wake_packet':['src/switch2_wake_packet.cpp','tests/test_switch2_wake_packet.cpp'],

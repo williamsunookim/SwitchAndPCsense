@@ -37,6 +37,17 @@ def main():
                 first_field=int.from_bytes(trace[6+i*8:8+i*8],'little'),
                 bytes=int.from_bytes(trace[8+i*8:10+i*8],'little'),
                 l2cap_cid=int.from_bytes(trace[10+i*8:12+i*8],'little')) for i in range(min(trace[3],6))]
+        elif trace[:3]==b'EL':
+            # ESP32-S3 co-processor build: page 7 reports the UART link.
+            age=int.from_bytes(trace[21:25],'little')
+            report['esp32_link']=dict(alive=bool(trace[3]&1),ever_heard=bool(trace[3]&2),
+                esp32_protocol=trace[4],frames_received=int.from_bytes(trace[5:9],'little'),
+                crc_or_framing_errors=int.from_bytes(trace[9:13],'little'),
+                rx_overflow=int.from_bytes(trace[13:17],'little'),
+                tx_dropped=int.from_bytes(trace[17:21],'little'),
+                ms_since_status=None if age==0xffffffff else age,
+                rumble_frames=int.from_bytes(trace[25:29],'little'),player_leds=trace[29],
+                raw_flags=trace[30])
         print(json.dumps(report, indent=2))
     finally:
         device.send_feature_report(bytes([0xf6, 0x30, 0]) + bytes(61))
