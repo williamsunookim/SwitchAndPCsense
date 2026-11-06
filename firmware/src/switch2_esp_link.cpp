@@ -186,7 +186,13 @@ void switch_bt_update(const ControllerState &s) {
     home = pressed;
     if (switch_bt_enabled()) send_state(s, false);
 }
-void switch_bt_neutral() { send_state(ControllerState{}, true); }
+void switch_bt_neutral() {
+    // Neutral inputs only: a zeroed battery makes the console warn "battery low".
+    ControllerState neutral{};
+    neutral.battery = last_sent.battery;
+    neutral.charging = last_sent.charging;
+    send_state(neutral, true);
+}
 bool switch_bt_connected() {
     constexpr uint8_t need = s2link::STATUS_CONNECTED | s2link::STATUS_ENCRYPTED | s2link::STATUS_SUBSCRIBED;
     return switch_bt_enabled() && alive() && (status.flags & need) == need;

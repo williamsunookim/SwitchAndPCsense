@@ -80,6 +80,25 @@ uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 bool same6(const uint8_t *a, const uint8_t *b) { return std::memcmp(a, b, 6) == 0; }
 void reverse6(const uint8_t *in, uint8_t *out) { for (unsigned i = 0; i < 6; ++i) out[i] = in[5 - i]; }
 
+// Neutral inputs that keep the last known DualSense power state: a zeroed
+// battery field makes the console warn "battery low". Until the Pico reports,
+// claim a full battery rather than an empty one.
+uint8_t last_battery = 9;
+bool last_charging = false;
+ControllerState neutral_state() {
+    ControllerState s{};
+    s.battery = last_battery;
+    s.charging = last_charging;
+    return s;
+}
+
+// The protocol reset also clears the input state; seed it with the last power
+// state so the console never sees a zero battery between reset and the next frame.
+void reset_protocol() {
+    protocol.reset(local_display);
+    protocol.update(neutral_state());
+}
+
 // ---- UART link to the Pico ----
 void link_send(uint8_t type, const uint8_t *payload, size_t size) {
     uint8_t frame[s2link::MAX_FRAME];
@@ -378,7 +397,7 @@ void advertise() {
 void forget_console() {
     if (known) ble_store_util_delete_peer(&peer_id);
     bond_erase();
-    protocol.reset(local_display);
+    reset_protocol();
     known = false; pairing = true; bond_pending = false; wake_until = 0;
     if (conn != BLE_HS_CONN_HANDLE_NONE) ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
     else advertise();
@@ -413,7 +432,7 @@ int gap_event(ble_gap_event *event, void *) {
         session_reset();
         const auto bond = protocol.bond();
         const bool restore = known && !pairing;
-        protocol.reset(local_display);
+        reset_protocol();
         if (restore) protocol.restore(bond);
         interval_us = uint32_t(desc.conn_itvl) * 1250;
         ESP_LOGI(TAG, "connected: interval=%.2f ms latency=%u timeout=%u ms", desc.conn_itvl * 1.25f,
@@ -426,7 +445,7 @@ int gap_event(ble_gap_event *event, void *) {
         st.last_error = uint8_t(event->disconnect.reason);
         conn = BLE_HS_CONN_HANDLE_NONE;
         session_reset();
-        if (pairing && !known) protocol.reset(local_display);
+        if (pairing && !known) reset_protocol();
         advertise();
         break;
     case BLE_GAP_EVENT_CONN_UPDATE:
@@ -481,7 +500,7 @@ void on_sync() {
         return;
     }
     reverse6(le, local_display);
-    protocol.reset(local_display);
+    reset_protocol();
     BondRecord rec{};
     if (bond_load(rec) && same6(rec.bond.local, local_display)) {
         protocol.restore(rec.bond);
@@ -572,7 +591,7 @@ void handle_link_frame(const s2link::Parser &parser) {
                 enabled = next;
                 ESP_LOGI(TAG, "Pico mode: %s", enabled ? "Switch" : "PC");
                 if (!enabled) {
-                    protocol.update(ControllerState{});
+                    protocol.update(neutral_state());
                     wake_until = 0;
                     if (conn != BLE_HS_CONN_HANDLE_NONE) ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
                 }
@@ -582,7 +601,11 @@ void handle_link_frame(const s2link::Parser &parser) {
         break;
     case s2link::STATE: {
         ControllerState state{};
-        if (s2link::unpack_state(p, n, state)) protocol.update(state);
+        if (s2link::unpack_state(p, n, state)) {
+            last_battery = state.battery;
+            last_charging = state.charging;
+            protocol.update(state);
+        }
         break;
     }
     case s2link::PAIR:
@@ -622,7 +645,7 @@ void link_task(void *) {
         }
         const uint32_t now = now_ms();
         if (last_pico_ms && now - last_pico_ms > PICO_TIMEOUT_MS) {
-            protocol.update(ControllerState{}); // Pico gone: hold neutral rather than a stuck input
+            protocol.update(neutral_state()); // Pico gone: hold neutral rather than a stuck input
             last_pico_ms = 0;
         }
         if (wake_until && int32_t(now - wake_until) >= 0) { wake_until = 0; advertise(); }
