@@ -512,7 +512,7 @@ void host_task(void *) {
 // host's msys_1 pool. Without a cap the 5 ms producer keeps that pool full and every
 // report waits behind ~100 stale ones (hundreds of ms of input lag). Skip a report
 // while more than a few are still queued; this matches the link's real drain rate.
-constexpr int MAX_QUEUED_MBUFS = 8;
+constexpr int MAX_QUEUED_MBUFS = 3;
 bool tx_backlogged() {
     os_mempool *mp = nullptr;
     os_mempool_info info{};
@@ -606,7 +606,14 @@ void link_task(void *) {
     uint8_t buffer[256];
     uint32_t last_status = 0, button_down_since = 0;
     for (;;) {
-        const int n = uart_read_bytes(LINK_UART, buffer, sizeof(buffer), pdMS_TO_TICKS(10));
+        // Block for the first byte only, then drain what is already buffered:
+        // asking for the full buffer would wait out the timeout on every frame.
+        int n = uart_read_bytes(LINK_UART, buffer, 1, pdMS_TO_TICKS(10));
+        size_t pending = 0;
+        if (n == 1 && uart_get_buffered_data_len(LINK_UART, &pending) == ESP_OK && pending) {
+            const int more = uart_read_bytes(LINK_UART, buffer + 1, std::min(pending, sizeof(buffer) - 1), 0);
+            if (more > 0) n += more;
+        }
         Guard guard;
         for (int i = 0; i < n; ++i) {
             if (!parser.push(buffer[i])) continue;
