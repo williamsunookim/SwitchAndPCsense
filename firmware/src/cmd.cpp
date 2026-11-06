@@ -11,6 +11,7 @@
 #include "bt.h"
 #include "switch_bt.h"
 #include "switch2_wake.h"
+#include "switch2_pro_protocol.h"
 #include "config.h"
 #include "device/usbd.h"
 #include "pico/time.h"
@@ -163,6 +164,17 @@ void pico_cmd_set(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize) {
         return;
     }
     if (report_id == 0xf6 && buffer[0] == 0x35) {switch2_wake_learn_cancel();return;}
+    // Switch 2 rumble tuning (RAM only): [1] frequency mode, [2..3] full scale LE (0 = keep).
+    if (report_id == 0xf6 && buffer[0] == 0x36 && bufsize >= 2) {
+        auto tuning = switch2_rumble_tuning();
+        tuning.mode = static_cast<Switch2RumbleFrequencyMode>(buffer[1]);
+        if (bufsize >= 4) {
+            const uint16_t full = uint16_t(buffer[2] | (buffer[3] << 8));
+            if (full) tuning.full_scale = full;
+        }
+        switch2_rumble_set_tuning(tuning);
+        return;
+    }
     if (report_id == 0xf6 && buffer[0] == 0x21) {switch_bt_pair();return;}
     if (report_id == 0xf6 && buffer[0] == 0x22) {if(!bt_is_connected())bt_bootsel_click_action();return;}
     if (report_id == 0xf6 && buffer[0] == 0x04) {

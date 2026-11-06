@@ -68,5 +68,21 @@ int main(){
     assert(decoded.left[0].amplitude[0]==102 && decoded.right[0].amplitude[0]==102);
     switch2_approximate_rumble(decoded,approximate);
     assert(approximate[0].left.high.amplitude==163 && approximate[2].right.high.amplitude==163);
+    // Frequency interpretations (selectable at runtime for tuning).
+    using M=Switch2RumbleFrequencyMode;
+    assert(switch2_rumble_frequency_hz(M::Fixed,289)==0);
+    assert(switch2_rumble_frequency_hz(M::Linear,289)==289 && switch2_rumble_frequency_hz(M::Linear,5)==20);
+    assert(switch2_rumble_frequency_hz(M::Log,0)==20 && switch2_rumble_frequency_hz(M::Log,128)==20);
+    assert(switch2_rumble_frequency_hz(M::Log,256)==40 && switch2_rumble_frequency_hz(M::Log,640)==320);
+    assert(switch2_rumble_frequency_hz(M::Log,289)==48 && switch2_rumble_frequency_hz(M::Log,481)==135);
+    assert(switch2_rumble_frequency_hz(M::Log,1023)==1250);
+    switch2_rumble_set_tuning({M::Log,100});
+    switch2_approximate_rumble(decoded,approximate);
+    // Log mode: the strong first band is the low tone (48 Hz), the second the high tone.
+    assert(approximate[0].left.low.frequency_hz==48 && approximate[0].left.low.amplitude==255);
+    assert(approximate[0].left.high.frequency_hz==135 && approximate[0].left.high.amplitude==5);
+    switch2_rumble_set_tuning({M(7),2000}); // out of range: fall back to fixed, clamp scale
+    assert(switch2_rumble_tuning().mode==M::Fixed && switch2_rumble_tuning().full_scale==1023);
+    switch2_rumble_set_tuning({});
     std::cout << "Pro Controller 2 pairing, reports and 10-bit rumble tests passed\n";
 }

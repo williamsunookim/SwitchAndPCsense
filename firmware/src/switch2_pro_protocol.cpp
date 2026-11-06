@@ -3,6 +3,7 @@
 // SDL hidapi_switch2, and esp-cpp/espp. See docs/SWITCH2_PRO.md.
 #include "switch2_pro_protocol.h"
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace {
@@ -177,20 +178,35 @@ bool switch2_decode_rumble(const uint8_t *p,size_t n,Switch2RumblePacket &out) {
     out=decoded;return true;
 }
 namespace {
-// The 10-bit frequency fields use undocumented units (not Hz), so the bands are
-// rendered at the classic Switch HD Rumble defaults and only amplitude is kept.
+// Fixed mode renders the bands at the classic Switch HD Rumble defaults.
 constexpr uint16_t RUMBLE_HIGH_HZ=320,RUMBLE_LOW_HZ=160;
+// The haptics synth runs at 3 kHz; keep tones inside its usable band.
+constexpr uint16_t RUMBLE_MIN_HZ=20,RUMBLE_MAX_HZ=1250;
 // Consoles send ~10-100 (of 1023) for ordinary effects, which felt far too weak
-// when scaled against Linux hid-nintendo's 450 cap. Tuned by feel on a DualSense.
-constexpr uint32_t RUMBLE_FULL_SCALE=160;
+// when scaled against Linux hid-nintendo's 450 cap. Default tuned by feel.
+Switch2RumbleTuning tuning_{};
 uint8_t rumble_amplitude(uint16_t amplitude) {
-    return uint8_t(std::min<uint32_t>(255,(amplitude*255u+RUMBLE_FULL_SCALE/2)/RUMBLE_FULL_SCALE));
+    const uint32_t full=tuning_.full_scale;
+    return uint8_t(std::min<uint32_t>(255,(amplitude*255u+full/2)/full));
 }
 bool rumble_frame_empty(const Switch2RumbleFrame &frame) {
     return !frame.frequency[0] && !frame.amplitude[0] && !frame.frequency[1] && !frame.amplitude[1];
 }
 }
+void switch2_rumble_set_tuning(const Switch2RumbleTuning &tuning) {
+    tuning_.mode=tuning.mode<=Switch2RumbleFrequencyMode::Log?tuning.mode:Switch2RumbleFrequencyMode::Fixed;
+    tuning_.full_scale=std::clamp<uint16_t>(tuning.full_scale,16,1023);
+}
+Switch2RumbleTuning switch2_rumble_tuning() {return tuning_;}
+uint16_t switch2_rumble_frequency_hz(Switch2RumbleFrequencyMode mode,uint16_t code) {
+    float hz=0;
+    if(mode==Switch2RumbleFrequencyMode::Linear)hz=float(code&1023);
+    else if(mode==Switch2RumbleFrequencyMode::Log)hz=10.0f*std::exp2(float(code&1023)/128.0f);
+    else return 0;
+    return uint16_t(std::clamp(hz+0.5f,float(RUMBLE_MIN_HZ),float(RUMBLE_MAX_HZ)));
+}
 void switch2_approximate_rumble(const Switch2RumblePacket &in,SwitchRumbleState out[3]) {
+    const auto mode=tuning_.mode;
     for(unsigned side=0;side<2;++side) {
         const auto *frames=side?in.right:in.left;
         const Switch2RumbleFrame *frame=&frames[0];
@@ -199,8 +215,15 @@ void switch2_approximate_rumble(const Switch2RumblePacket &in,SwitchRumbleState 
             // means "no new frame", so hold the previous one instead of gapping.
             if(f && !rumble_frame_empty(frames[f]))frame=&frames[f];
             auto &actuator=side?out[f].right:out[f].left;
-            actuator.high={RUMBLE_HIGH_HZ,rumble_amplitude(frame->amplitude[0])};
-            actuator.low={RUMBLE_LOW_HZ,rumble_amplitude(frame->amplitude[1])};
+            if(mode==Switch2RumbleFrequencyMode::Fixed) {
+                actuator.high={RUMBLE_HIGH_HZ,rumble_amplitude(frame->amplitude[0])};
+                actuator.low={RUMBLE_LOW_HZ,rumble_amplitude(frame->amplitude[1])};
+            } else {
+                // Console captures put the strong, lower-coded band first (GP2040-CE
+                // also treats bits 10-19 as the low-frequency amplitude).
+                actuator.low={switch2_rumble_frequency_hz(mode,frame->frequency[0]),rumble_amplitude(frame->amplitude[0])};
+                actuator.high={switch2_rumble_frequency_hz(mode,frame->frequency[1]),rumble_amplitude(frame->amplitude[1])};
+            }
         }
     }
 }

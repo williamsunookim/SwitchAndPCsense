@@ -37,3 +37,19 @@ struct Switch2RumbleFrame { uint16_t frequency[2]{}, amplitude[2]{}; };
 struct Switch2RumblePacket { Switch2RumbleFrame left[3]{}, right[3]{}; };
 bool switch2_decode_rumble(const uint8_t *data, size_t size, Switch2RumblePacket &out);
 void switch2_approximate_rumble(const Switch2RumblePacket &in, SwitchRumbleState out[3]);
+
+// The 10-bit frequency fields have no public Hz mapping, so the interpretation is
+// selectable at runtime (F6 0x36) for tuning by feel.
+enum class Switch2RumbleFrequencyMode : uint8_t {
+    Fixed = 0,  // ignore the codes: amplitude only, bands at 160/320 Hz
+    Linear = 1, // code == Hz
+    Log = 2,    // Switch 1 style log scale at 10-bit resolution: 10 * 2^(code / 128) Hz
+};
+struct Switch2RumbleTuning {
+    Switch2RumbleFrequencyMode mode = Switch2RumbleFrequencyMode::Fixed;
+    uint16_t full_scale = 160; // 10-bit amplitude that maps to full DualSense strength
+};
+void switch2_rumble_set_tuning(const Switch2RumbleTuning &tuning);
+Switch2RumbleTuning switch2_rumble_tuning();
+// Hz for one 10-bit frequency code under the given mode (0 for Fixed).
+uint16_t switch2_rumble_frequency_hz(Switch2RumbleFrequencyMode mode, uint16_t code);
