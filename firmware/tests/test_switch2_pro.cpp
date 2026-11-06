@@ -59,6 +59,14 @@ int main(){
     assert(!switch2_decode_rumble(packet,32,decoded));packet[1]=0xf0;assert(!switch2_decode_rumble(packet,33,decoded));
     packet[1]=0x50;std::memset(packet+2,255,5);assert(switch2_decode_rumble(packet,33,decoded));
     SwitchRumbleState approximate[3]{};switch2_approximate_rumble(decoded,approximate);
-    assert(approximate[0].left.high.amplitude==255 && approximate[1].silent());
+    assert(approximate[0].left.high.amplitude==255 && approximate[0].left.high.frequency_hz==320);
+    assert(approximate[1]==approximate[0] && approximate[2]==approximate[0]); // empty slots hold
+    // Captured from a real Switch 2: only frame 0 of each side is filled, hi_amp=102.
+    const uint8_t console[33]={0x00,0x52,0x21,0x99,0x11,0x9e,0,0,0,0,0,0,0,0,0,0,0,
+                               0x52,0x21,0x99,0x11,0x9e,0,0,0,0,0,0,0,0,0,0,0};
+    assert(switch2_decode_rumble(console,33,decoded));
+    assert(decoded.left[0].amplitude[0]==102 && decoded.right[0].amplitude[0]==102);
+    switch2_approximate_rumble(decoded,approximate);
+    assert(approximate[0].left.high.amplitude==163 && approximate[2].right.high.amplitude==163);
     std::cout << "Pro Controller 2 pairing, reports and 10-bit rumble tests passed\n";
 }

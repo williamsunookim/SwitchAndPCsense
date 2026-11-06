@@ -176,12 +176,31 @@ bool switch2_decode_rumble(const uint8_t *p,size_t n,Switch2RumblePacket &out) {
     }
     out=decoded;return true;
 }
+namespace {
+// The 10-bit frequency fields use undocumented units (not Hz), so the bands are
+// rendered at the classic Switch HD Rumble defaults and only amplitude is kept.
+constexpr uint16_t RUMBLE_HIGH_HZ=320,RUMBLE_LOW_HZ=160;
+// Consoles send ~10-100 (of 1023) for ordinary effects, which felt far too weak
+// when scaled against Linux hid-nintendo's 450 cap. Tuned by feel on a DualSense.
+constexpr uint32_t RUMBLE_FULL_SCALE=160;
+uint8_t rumble_amplitude(uint16_t amplitude) {
+    return uint8_t(std::min<uint32_t>(255,(amplitude*255u+RUMBLE_FULL_SCALE/2)/RUMBLE_FULL_SCALE));
+}
+bool rumble_frame_empty(const Switch2RumbleFrame &frame) {
+    return !frame.frequency[0] && !frame.amplitude[0] && !frame.frequency[1] && !frame.amplitude[1];
+}
+}
 void switch2_approximate_rumble(const Switch2RumblePacket &in,SwitchRumbleState out[3]) {
-    for(unsigned f=0;f<3;++f)for(unsigned side=0;side<2;++side) {
-        const auto &frame=side?in.right[f]:in.left[f];auto &actuator=side?out[f].right:out[f].left;
-        // The physical frequency transfer function is not documented by Linux.
-        // Preserve the code as a nominal Hz approximation, never claim calibration.
-        actuator.high={std::clamp<uint16_t>(frame.frequency[0]&511,20,1250),uint8_t((frame.amplitude[0]*255u+511)/1023)};
-        actuator.low={std::clamp<uint16_t>(frame.frequency[1]&511,20,1250),uint8_t((frame.amplitude[1]*255u+511)/1023)};
+    for(unsigned side=0;side<2;++side) {
+        const auto *frames=side?in.right:in.left;
+        const Switch2RumbleFrame *frame=&frames[0];
+        for(unsigned f=0;f<3;++f) {
+            // Consoles fill only the first 5-byte frame; an all-zero slot after it
+            // means "no new frame", so hold the previous one instead of gapping.
+            if(f && !rumble_frame_empty(frames[f]))frame=&frames[f];
+            auto &actuator=side?out[f].right:out[f].left;
+            actuator.high={RUMBLE_HIGH_HZ,rumble_amplitude(frame->amplitude[0])};
+            actuator.low={RUMBLE_LOW_HZ,rumble_amplitude(frame->amplitude[1])};
+        }
     }
 }
