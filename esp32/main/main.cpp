@@ -24,6 +24,7 @@
 #include "host/ble_hs.h"
 #include "host/ble_store.h"
 #include "host/util/util.h"
+#include "os/os_mempool.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "services/gap/ble_svc_gap.h"
@@ -57,9 +58,11 @@ constexpr size_t RESPONSE_PREFIX = 14, RUMBLE_PREFIX = 33;
 
 // ---- Shared state, guarded by `lock` ----
 SemaphoreHandle_t lock;
+// Recursive: a GATT write handler holds the lock while notifying, and NimBLE
+// delivers BLE_GAP_EVENT_NOTIFY_TX to gap_event synchronously on the same task.
 struct Guard {
-    Guard() { xSemaphoreTake(lock, portMAX_DELAY); }
-    ~Guard() { xSemaphoreGive(lock); }
+    Guard() { xSemaphoreTakeRecursive(lock, portMAX_DELAY); }
+    ~Guard() { xSemaphoreGiveRecursive(lock); }
 };
 
 Switch2ProProtocol protocol;
@@ -447,6 +450,7 @@ int gap_event(ble_gap_event *event, void *) {
     case BLE_GAP_EVENT_SUBSCRIBE: {
         const auto h = event->subscribe.attr_handle;
         const bool on = event->subscribe.cur_notify;
+        ESP_LOGI(TAG, "subscribe: handle=0x%04x notify=%d", h, on);
         if (h == value_handle[IN05]) sub05 = on;
         else if (h == value_handle[IN09]) sub09 = on;
         else if (h == value_handle[RSP1]) sub_rsp1 = on;
@@ -455,6 +459,7 @@ int gap_event(ble_gap_event *event, void *) {
     }
     case BLE_GAP_EVENT_MTU:
         st.mtu = event->mtu.value;
+        ESP_LOGI(TAG, "mtu: %u", event->mtu.value);
         break;
     case BLE_GAP_EVENT_REPEAT_PAIRING:
         // The console never uses SMP; refuse rather than overwrite the injected key.
@@ -503,6 +508,20 @@ void host_task(void *) {
 }
 
 // ---- Tasks ----
+// Backpressure: notifications that the controller has not sent yet stay in the
+// host's msys_1 pool. Without a cap the 5 ms producer keeps that pool full and every
+// report waits behind ~100 stale ones (hundreds of ms of input lag). Skip a report
+// while more than a few are still queued; this matches the link's real drain rate.
+constexpr int MAX_QUEUED_MBUFS = 8;
+bool tx_backlogged() {
+    os_mempool *mp = nullptr;
+    os_mempool_info info{};
+    while ((mp = os_mempool_info_get_next(mp, &info)) != nullptr)
+        if (std::strcmp(info.omi_name, "msys_1") == 0)
+            return info.omi_num_blocks - info.omi_num_free >= MAX_QUEUED_MBUFS;
+    return false;
+}
+
 // Input reports paced at the connection interval (5 ms once the console
 // switches the link down; 15 ms during pairing).
 void input_task(void *) {
@@ -513,6 +532,7 @@ void input_task(void *) {
         if (conn == BLE_HS_CONN_HANDLE_NONE || !encrypted || !protocol.paired() || !(sub05 || sub09)) continue;
         const int64_t now = esp_timer_get_time();
         if (now < next_input_us) continue;
+        if (tx_backlogged()) continue; // retry next tick with fresher state
         const bool use09 = sub09;
         protocol.input(use09 ? 9 : 5, uint32_t(now), report);
         notify(value_handle[use09 ? IN09 : IN05], report, sizeof(report));
@@ -622,7 +642,7 @@ bool crypto_self_test() {
 } // namespace
 
 extern "C" void app_main() {
-    lock = xSemaphoreCreateMutex();
+    lock = xSemaphoreCreateRecursiveMutex();
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -665,6 +685,7 @@ extern "C" void app_main() {
     ble_svc_gap_init();
     ble_svc_gatt_init();
     ble_svc_gap_device_name_set("Pro Controller");
+    ble_svc_gap_device_appearance_set(0x03c4); // gamepad, as the real controller reports
     ble_store_config_init();
 
     xTaskCreate(link_task, "s2link", 4096, nullptr, 5, nullptr);
