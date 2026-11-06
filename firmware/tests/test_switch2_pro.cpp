@@ -58,6 +58,7 @@ int main(){
     assert(decoded.right[0].amplitude[0]==0);
     assert(!switch2_decode_rumble(packet,32,decoded));packet[1]=0xf0;assert(!switch2_decode_rumble(packet,33,decoded));
     packet[1]=0x50;std::memset(packet+2,255,5);assert(switch2_decode_rumble(packet,33,decoded));
+    switch2_rumble_set_tuning({Switch2RumbleFrequencyMode::Fixed,160});
     SwitchRumbleState approximate[3]{};switch2_approximate_rumble(decoded,approximate);
     assert(approximate[0].left.high.amplitude==255 && approximate[0].left.high.frequency_hz==320);
     assert(approximate[1]==approximate[0] && approximate[2]==approximate[0]); // empty slots hold
@@ -84,5 +85,6 @@ int main(){
     switch2_rumble_set_tuning({M(7),2000}); // out of range: fall back to fixed, clamp scale
     assert(switch2_rumble_tuning().mode==M::Fixed && switch2_rumble_tuning().full_scale==1023);
     switch2_rumble_set_tuning({});
+    assert(switch2_rumble_tuning().mode==M::Log && switch2_rumble_tuning().full_scale==160); // defaults
     std::cout << "Pro Controller 2 pairing, reports and 10-bit rumble tests passed\n";
 }

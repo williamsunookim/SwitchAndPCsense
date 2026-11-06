@@ -46,7 +46,7 @@ enum class Switch2RumbleFrequencyMode : uint8_t {
     Log = 2,    // Switch 1 style log scale at 10-bit resolution: 10 * 2^(code / 128) Hz
 };
 struct Switch2RumbleTuning {
-    Switch2RumbleFrequencyMode mode = Switch2RumbleFrequencyMode::Fixed;
+    Switch2RumbleFrequencyMode mode = Switch2RumbleFrequencyMode::Log; // preferred by feel
     uint16_t full_scale = 160; // 10-bit amplitude that maps to full DualSense strength
 };
 void switch2_rumble_set_tuning(const Switch2RumbleTuning &tuning);

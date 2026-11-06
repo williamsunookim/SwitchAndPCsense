@@ -3,11 +3,11 @@
 Tune how Switch 2 HD Rumble 2 is rendered on the DualSense, live.
 
 The console's 10-bit frequency fields have no public Hz mapping, so the Pico
-can interpret them three ways (RAM only; a reboot restores fixed/160):
+can interpret them three ways (RAM only; a reboot restores log/160):
 
-  fixed   amplitude only; bands at 160 / 320 Hz (default)
+  fixed   amplitude only; bands at 160 / 320 Hz
   linear  code == Hz
-  log     10 * 2^(code / 128) Hz (Switch 1 log scale at 10-bit resolution)
+  log     10 * 2^(code / 128) Hz (Switch 1 log scale at 10-bit resolution; default)
 
 --full-scale sets the 10-bit amplitude that maps to full DualSense strength
 (lower = stronger; default 160).
