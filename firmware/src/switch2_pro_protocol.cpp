@@ -48,7 +48,8 @@ void Switch2ProProtocol::reset(const uint8_t local[6]) {
 }
 void Switch2ProProtocol::restore(const Switch2ProBond &bond) {bond_=bond;paired_=true;}
 bool Switch2ProProtocol::take_bond(Switch2ProBond &out) {
-    if(!bond_dirty_)return false;out=bond_;bond_dirty_=false;return true;
+    if(!bond_dirty_)return false;
+    out=bond_;bond_dirty_=false;return true;
 }
 bool Switch2ProProtocol::command(const uint8_t *p,size_t n,uint8_t *out,size_t &length,Switch2Aes aes) {
     length=0;
@@ -122,14 +123,21 @@ void Switch2ProProtocol::input(uint8_t id,uint32_t time_us,uint8_t out[63]) {
     const bool left=state_.dpad==5 || state_.dpad==6 || state_.dpad==7;
     const bool right=state_.dpad==1 || state_.dpad==2 || state_.dpad==3;
     uint8_t x=0,y=0,z=0;
-    if(b&CONTROLLER_BUTTON_CROSS)x|=1;if(b&CONTROLLER_BUTTON_CIRCLE)x|=2;
-    if(b&CONTROLLER_BUTTON_SQUARE)x|=4;if(b&CONTROLLER_BUTTON_TRIANGLE)x|=8;
-    if(b&CONTROLLER_BUTTON_R1)x|=16;if((b&CONTROLLER_BUTTON_R2)||state_.r2>32)x|=32;
-    if(b&CONTROLLER_BUTTON_OPTIONS)x|=64;if(b&CONTROLLER_BUTTON_R3)x|=128;
+    if(b&CONTROLLER_BUTTON_CROSS)x|=1;
+    if(b&CONTROLLER_BUTTON_CIRCLE)x|=2;
+    if(b&CONTROLLER_BUTTON_SQUARE)x|=4;
+    if(b&CONTROLLER_BUTTON_TRIANGLE)x|=8;
+    if(b&CONTROLLER_BUTTON_R1)x|=16;
+    if((b&CONTROLLER_BUTTON_R2)||state_.r2>32)x|=32;
+    if(b&CONTROLLER_BUTTON_OPTIONS)x|=64;
+    if(b&CONTROLLER_BUTTON_R3)x|=128;
     y=uint8_t(unsigned(down)|(unsigned(right)<<1)|(unsigned(left)<<2)|(unsigned(up)<<3));
-    if(b&CONTROLLER_BUTTON_L1)y|=16;if((b&CONTROLLER_BUTTON_L2)||state_.l2>32)y|=32;
-    if(b&CONTROLLER_BUTTON_CREATE)y|=64;if(b&CONTROLLER_BUTTON_L3)y|=128;
-    if(b&CONTROLLER_BUTTON_HOME)z|=1;if(b&CONTROLLER_BUTTON_PAD)z|=2;
+    if(b&CONTROLLER_BUTTON_L1)y|=16;
+    if((b&CONTROLLER_BUTTON_L2)||state_.l2>32)y|=32;
+    if(b&CONTROLLER_BUTTON_CREATE)y|=64;
+    if(b&CONTROLLER_BUTTON_L3)y|=128;
+    if(b&CONTROLLER_BUTTON_HOME)z|=1;
+    if(b&CONTROLLER_BUTTON_PAD)z|=2;
     if(b&CONTROLLER_BUTTON_MUTE)z|=16; // Mute maps to C; no invented GL/GR inputs.
     if(id==5) {
         put32(out,counter_++);
